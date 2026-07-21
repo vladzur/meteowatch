@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meteowatch"
+version = "1.0.0"
+description = "Aplicación GNOME de pronóstico meteorológico usando la API de Meteored"
+authors = [{ name = "Meteowatch" }]
+license = { text = "GPL-3.0-only" }
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "pygobject>=3.46",
+]
+
+[project.scripts]
+meteowatch = "meteowatch.main:main"
+
+[tool.setuptools.packages.find]
+include = ["meteowatch*"]

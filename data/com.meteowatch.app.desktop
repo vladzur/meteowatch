@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Meteowatch
+Comment=Pronóstico meteorológico con Meteored
+Exec=meteowatch
+Icon=weather-few-clouds
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Utility;Weather;
+StartupNotify=true
