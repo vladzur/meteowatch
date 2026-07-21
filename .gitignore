@@ -12,7 +12,9 @@ venv/
 .flatpak-builder/
 build-dir/
 .repo/
+repo/
 flatpak-deps/
+*.flatpak
 
 # Tests
 .pytest_cache/
