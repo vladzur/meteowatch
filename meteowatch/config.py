@@ -6,10 +6,11 @@ en ~/.config/meteowatch/config.json.
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-
-CONFIG_DIR = os.path.expanduser("~/.config/meteowatch")
+# Usar XDG_CONFIG_HOME si está disponible, fallback a ~/.config
+_xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+CONFIG_DIR = os.path.join(_xdg_config, "meteowatch")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 
