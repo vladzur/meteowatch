@@ -1,7 +1,7 @@
 {
   "app-id": "com.meteowatch.app",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "46",
+  "runtime-version": "49",
   "sdk": "org.gnome.Sdk",
   "command": "meteowatch",
   "finish-args": [
@@ -12,10 +12,23 @@
   ],
   "modules": [
     {
+      "name": "python3-deps",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --prefix=/app --no-deps --ignore-installed *.whl"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "flatpak-deps"
+        }
+      ]
+    },
+    {
       "name": "meteowatch",
       "buildsystem": "simple",
       "build-commands": [
-        "pip3 install --prefix=/app --no-deps ."
+        "pip3 install --prefix=/app --no-deps --no-build-isolation ."
       ],
       "sources": [
         {
