@@ -2,7 +2,7 @@
 Name=Meteowatch
 Comment=Pronóstico meteorológico con Meteored
 Exec=meteowatch
-Icon=weather-few-clouds
+Icon=com.meteowatch.app
 Terminal=false
 Type=Application
 Categories=GNOME;GTK;Utility;Weather;

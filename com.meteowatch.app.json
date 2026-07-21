@@ -28,7 +28,9 @@
       "name": "meteowatch",
       "buildsystem": "simple",
       "build-commands": [
-        "pip3 install --prefix=/app --no-deps --no-build-isolation ."
+        "pip3 install --prefix=/app --no-deps --no-build-isolation .",
+        "install -Dm644 data/com.meteowatch.app.desktop /app/share/applications/com.meteowatch.app.desktop",
+        "install -Dm644 data/com.meteowatch.app.svg /app/share/icons/hicolor/scalable/apps/com.meteowatch.app.svg"
       ],
       "sources": [
         {
