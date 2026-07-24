@@ -9,24 +9,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Configurar Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
       - name: Instalar dependencias del sistema
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgirepository-1.0-dev \
+            python3-gi \
+            python3-pytest \
+            python3-pip \
+            python3-requests \
             libgtk-4-dev \
             libadwaita-1-dev \
             gobject-introspection \
@@ -35,11 +30,11 @@ jobs:
             pkg-config \
             xvfb
 
-      - name: Instalar dependencias Python
+      - name: Instalar meteowatch (modo editable)
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest
+          python3 -m pip install --upgrade pip
+          # pygobject ya viene del sistema (python3-gi), se omite con --no-deps
+          pip install --no-deps -e .
 
       - name: Ejecutar tests
-        run: xvfb-run pytest tests/ -v --tb=short
+        run: xvfb-run python3 -m pytest tests/ -v --tb=short
