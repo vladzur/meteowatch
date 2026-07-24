@@ -25,6 +25,17 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub org.gnome.Sdk//49 org.gnome.Platform//49
 
+      - name: Descargar wheels Python para Flatpak
+        run: |
+          mkdir -p flatpak-deps
+          python3 -m pip download \
+            --only-binary=:all: \
+            --platform manylinux2014_x86_64 \
+            --python-version 313 \
+            --implementation cp \
+            --dest flatpak-deps \
+            requests urllib3 certifi charset-normalizer idna setuptools
+
       - name: Construir Flatpak
         run: |
           flatpak-builder \
