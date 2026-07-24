@@ -1,15 +1,15 @@
-"""Cliente HTTP para la API de pronóstico meteorológico de Meteored.
+"""Cliente HTTP para la API de pronóstico meteorológico de Open-Meteo.
 
-Implementa los tres endpoints disponibles:
-- Búsqueda de ubicación por texto
-- Pronóstico diario (5 días)
-- Pronóstico por hora (hoy)
+Implementa los endpoints necesarios:
+- Geocoding: búsqueda de ubicación por texto
+- Forecast: pronóstico diario, por hora y condiciones actuales (todo en una llamada)
+
+Open-Meteo es gratuito para uso no comercial (hasta 10,000 requests/día)
+y no requiere autenticación.
 """
 
-import json
 import logging
-import time
-from typing import Optional
+from typing import Optional, NamedTuple
 
 import requests
 
@@ -19,163 +19,315 @@ from meteowatch.models.location import Location
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.meteored.com"
+GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+# Variables diarias que solicitamos a la API
+DAILY_VARIABLES = [
+    "temperature_2m_max",
+    "temperature_2m_min",
+    "weather_code",
+    "precipitation_sum",
+    "precipitation_probability_max",
+    "wind_speed_10m_max",
+    "wind_gusts_10m_max",
+    "wind_direction_10m_dominant",
+    "sunrise",
+    "sunset",
+    "daylight_duration",
+    "sunshine_duration",
+    "uv_index_max",
+]
+
+# Variables horarias que solicitamos a la API
+HOURLY_VARIABLES = [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "apparent_temperature",
+    "precipitation",
+    "precipitation_probability",
+    "weather_code",
+    "cloud_cover",
+    "pressure_msl",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+    "uv_index",
+    "is_day",
+]
+
+# Variables de condiciones actuales
+CURRENT_VARIABLES = [
+    "temperature_2m",
+    "relative_humidity_2m",
+    "apparent_temperature",
+    "weather_code",
+    "cloud_cover",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+    "precipitation",
+    "precipitation_probability",
+    "is_day",
+    "pressure_msl",
+    "uv_index",
+]
 
 
-class MeteoredError(Exception):
-    """Excepción base para errores de la API de Meteored."""
+class OpenMeteoError(Exception):
+    """Excepción base para errores de la API de Open-Meteo."""
 
     def __init__(self, message: str, status_code: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
 
 
-class MeteoredClient:
-    """Cliente HTTP para interactuar con la API de Meteored.
+class CurrentWeather(NamedTuple):
+    """Condiciones meteorológicas actuales."""
 
-    Maneja autenticación vía header x-api-key y rate limiting básico.
+    temperature: float
+    humidity: int
+    feels_like: float
+    symbol: int
+    clouds: int
+    wind_speed: int
+    wind_gust: int
+    wind_direction: int
+    precipitation: float
+    precipitation_probability: int
+    is_day: bool
+    pressure: int
+    uv_index: float
+
+
+class ForecastResult(NamedTuple):
+    """Resultado combinado de una llamada a la API de forecast."""
+
+    daily: DailyForecast
+    hourly: HourlyForecast
+    current: CurrentWeather
+    raw: dict
+
+
+class OpenMeteoClient:
+    """Cliente HTTP para interactuar con la API de Open-Meteo.
+
+    No requiere autenticación. La API gratuita permite hasta 10,000
+    requests diarios sin clave.
     """
 
-    def __init__(self, api_key: str):
-        """Inicializa el cliente con la API key proporcionada.
-
-        Args:
-            api_key: Clave de API de Meteored para autenticación.
-        """
-        self._api_key = api_key
+    def __init__(self):
+        """Inicializa el cliente HTTP."""
         self._session = requests.Session()
         self._session.headers.update({
-            "x-api-key": api_key,
             "Accept": "application/json",
         })
-        self._session.timeout = 15  # timeout por defecto en segundos
-        self._last_request_time: float = 0
+        self._session.timeout = 15
 
-    def _respect_rate_limit(self) -> None:
-        """Aplica una pausa mínima entre requests para evitar rate limiting."""
-        elapsed = time.monotonic() - self._last_request_time
-        if elapsed < 1.0:
-            time.sleep(1.0 - elapsed)
-        self._last_request_time = time.monotonic()
+    # ------------------------------------------------------------------
+    # Geocoding
+    # ------------------------------------------------------------------
 
-    def _request(self, method: str, path: str) -> dict:
-        """Realiza una petición HTTP y maneja errores de forma centralizada.
-
-        Args:
-            method: Método HTTP (GET, POST, etc.).
-            path: Ruta relativa del endpoint (sin BASE_URL).
-
-        Returns:
-            Diccionario con la respuesta JSON parseada.
-
-        Raises:
-            MeteoredError: Si la API retorna un error o hay un fallo de conexión.
-        """
-        self._respect_rate_limit()
-        url = f"{BASE_URL}{path}"
-
-        logger.debug(">>> %s %s", method, url)
-
-        try:
-            response = self._session.request(method, url)
-        except requests.RequestException as e:
-            logger.exception("Error de conexión con la API")
-            raise MeteoredError(f"Error de conexión: {e}") from e
-
-        logger.debug("<<< HTTP %s (%d bytes)", response.status_code, len(response.content))
-
-        # Procesar respuesta
-        try:
-            data = response.json()
-        except ValueError:
-            logger.error("Respuesta no es JSON: %s", response.text[:500])
-            raise MeteoredError(
-                "Respuesta inválida de la API (no es JSON)",
-                status_code=response.status_code,
-            )
-
-        # Log de la estructura de respuesta (primeros 500 chars)
-        logger.debug("Respuesta JSON: ok=%s, data type=%s",
-                     data.get("ok"), type(data.get("data")).__name__)
-
-        # Verificar errores de la API
-        if not data.get("ok", False):
-            error_msg = data.get("info", {}).get("message", "Error desconocido")
-            logger.error("API retornó error: %s", error_msg)
-            raise MeteoredError(error_msg, status_code=response.status_code)
-
-        if response.status_code >= 400:
-            error_msg = data.get("info", {}).get("message", f"HTTP {response.status_code}")
-            logger.error("HTTP error %s: %s", response.status_code, error_msg)
-            raise MeteoredError(error_msg, status_code=response.status_code)
-
-        return data
-
-    def search_location(self, text: str) -> list[Location]:
+    def search_location(self, text: str, count: int = 10,
+                        language: str = "es") -> list[Location]:
         """Busca ubicaciones por nombre de texto.
 
         Args:
             text: Texto de búsqueda (nombre de ciudad, región, etc.).
+            count: Número máximo de resultados.
+            language: Idioma para los nombres de ubicación.
 
         Returns:
             Lista de ubicaciones que coinciden con la búsqueda.
         """
         logger.info("Buscando ubicación: '%s'", text)
-        path = f"/api/location/v1/search/txt/{text}"
-        data = self._request("GET", path)
+        params = {
+            "name": text,
+            "count": count,
+            "language": language,
+            "format": "json",
+        }
 
-        locations_data = data.get("data", {}).get("locations", [])
-        logger.info("Encontradas %d ubicaciones para '%s'", len(locations_data), text)
-        return [Location.from_dict(loc) for loc in locations_data]
+        try:
+            response = self._session.get(GEOCODING_URL, params=params)
+        except requests.RequestException as e:
+            logger.exception("Error de conexión con la API de geocoding")
+            raise OpenMeteoError(f"Error de conexión: {e}") from e
 
-    def get_daily_forecast(self, location_hash: str) -> DailyForecast:
-        """Obtiene el pronóstico diario para una ubicación (5 días).
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                reason = error_data.get("reason", f"HTTP {response.status_code}")
+            except ValueError:
+                reason = f"HTTP {response.status_code}"
+            logger.error("Geocoding error: %s", reason)
+            raise OpenMeteoError(reason, status_code=response.status_code)
+
+        try:
+            data = response.json()
+        except ValueError:
+            logger.error("Respuesta no es JSON: %s", response.text[:500])
+            raise OpenMeteoError("Respuesta inválida de la API (no es JSON)")
+
+        results = data.get("results", [])
+        logger.info("Encontradas %d ubicaciones para '%s'", len(results), text)
+        return [Location.from_dict(loc) for loc in results]
+
+    # ------------------------------------------------------------------
+    # Forecast (daily + hourly + current en una sola llamada)
+    # ------------------------------------------------------------------
+
+    def get_forecast(self, latitude: float, longitude: float,
+                     timezone: str = "auto",
+                     forecast_days: int = 7) -> ForecastResult:
+        """Obtiene pronóstico diario, por hora y condiciones actuales.
+
+        Realiza una única llamada HTTP que incluye daily, hourly y current.
 
         Args:
-            location_hash: Hash de la ubicación obtenido de la búsqueda.
+            latitude: Latitud de la ubicación.
+            longitude: Longitud de la ubicación.
+            timezone: Zona horaria IANA o "auto" para detección automática.
+            forecast_days: Número de días de pronóstico (máx. 16).
 
         Returns:
-            Objeto DailyForecast con los datos del día actual.
+            ForecastResult con daily, hourly y current.
         """
-        logger.info("Obteniendo pronóstico diario para hash=%s", location_hash)
-        path = f"/api/forecast/v1/daily/{location_hash}"
-        data = self._request("GET", path)
+        logger.info(
+            "Obteniendo forecast: lat=%.4f, lon=%.4f, tz=%s, days=%d",
+            latitude, longitude, timezone, forecast_days,
+        )
 
-        forecast_data = data.get("data", {})
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "timezone": timezone,
+            "forecast_days": forecast_days,
+            "daily": ",".join(DAILY_VARIABLES),
+            "hourly": ",".join(HOURLY_VARIABLES),
+            "current": ",".join(CURRENT_VARIABLES),
+        }
 
-        # Volcar estructura real de la respuesta para diagnóstico
-        if isinstance(forecast_data, dict):
-            logger.debug("Claves en data: %s", sorted(forecast_data.keys()))
-            num_days = len(forecast_data.get("days", []))
-            logger.debug("JSON crudo (daily, %d días): %s",
-                        num_days,
-                        json.dumps(forecast_data, ensure_ascii=False, default=str)[:500])
+        try:
+            response = self._session.get(FORECAST_URL, params=params)
+        except requests.RequestException as e:
+            logger.exception("Error de conexión con la API de forecast")
+            raise OpenMeteoError(f"Error de conexión: {e}") from e
 
-        return DailyForecast.from_dict(forecast_data)
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                reason = error_data.get("reason", f"HTTP {response.status_code}")
+            except ValueError:
+                reason = f"HTTP {response.status_code}"
+            logger.error("Forecast error: %s", reason)
+            raise OpenMeteoError(reason, status_code=response.status_code)
 
-    def get_hourly_forecast(self, location_hash: str) -> HourlyForecast:
-        """Obtiene el pronóstico por hora para una ubicación (hoy).
+        try:
+            data = response.json()
+        except ValueError:
+            logger.error("Respuesta no es JSON: %s", response.text[:500])
+            raise OpenMeteoError("Respuesta inválida de la API (no es JSON)")
+
+        logger.debug(
+            "Forecast recibido: daily=%d días, hourly=%d horas, current=%s",
+            len(data.get("daily", {}).get("time", [])),
+            len(data.get("hourly", {}).get("time", [])),
+            "present" if data.get("current") else "absent",
+        )
+
+        # Parsear cada bloque
+        daily = DailyForecast.from_openmeteo_daily(data)
+        hourly = HourlyForecast.from_openmeteo_hourly(data)
+        current = self._parse_current(data)
+
+        return ForecastResult(
+            daily=daily,
+            hourly=hourly,
+            current=current,
+            raw=data,
+        )
+
+    def get_daily_forecast(self, latitude: float, longitude: float,
+                           timezone: str = "auto",
+                           forecast_days: int = 7) -> DailyForecast:
+        """Obtiene solo el pronóstico diario.
 
         Args:
-            location_hash: Hash de la ubicación obtenido de la búsqueda.
+            latitude: Latitud de la ubicación.
+            longitude: Longitud de la ubicación.
+            timezone: Zona horaria IANA.
+            forecast_days: Número de días.
 
         Returns:
-            Objeto HourlyForecast con los datos hora a hora.
+            DailyForecast con los días de pronóstico.
         """
-        logger.info("Obteniendo pronóstico por hora para hash=%s", location_hash)
-        path = f"/api/forecast/v1/hourly/{location_hash}"
-        data = self._request("GET", path)
+        result = self.get_forecast(latitude, longitude, timezone, forecast_days)
+        return result.daily
 
-        forecast_data = data.get("data", {})
+    def get_hourly_forecast(self, latitude: float, longitude: float,
+                            timezone: str = "auto",
+                            forecast_days: int = 7) -> HourlyForecast:
+        """Obtiene solo el pronóstico por hora.
 
-        # Volcar estructura real para diagnóstico
-        if isinstance(forecast_data, dict):
-            logger.debug("Claves en data (hourly): %s", sorted(forecast_data.keys()))
-            logger.debug("JSON crudo (hourly, primeros 500 chars): %s",
-                        json.dumps(forecast_data, ensure_ascii=False, default=str)[:500])
+        Args:
+            latitude: Latitud de la ubicación.
+            longitude: Longitud de la ubicación.
+            timezone: Zona horaria IANA.
+            forecast_days: Número de días.
 
-        num_hours = len(forecast_data.get("hours", [])) if isinstance(forecast_data, dict) else 0
-        logger.info("Pronóstico por hora: name=%s, %d horas",
-                   forecast_data.get("name") if isinstance(forecast_data, dict) else "?",
-                   num_hours)
-        return HourlyForecast.from_dict(forecast_data)
+        Returns:
+            HourlyForecast con las horas de pronóstico.
+        """
+        result = self.get_forecast(latitude, longitude, timezone, forecast_days)
+        return result.hourly
+
+    def get_current_weather(self, latitude: float, longitude: float,
+                            timezone: str = "auto") -> CurrentWeather:
+        """Obtiene solo las condiciones actuales.
+
+        Args:
+            latitude: Latitud de la ubicación.
+            longitude: Longitud de la ubicación.
+            timezone: Zona horaria IANA.
+
+        Returns:
+            CurrentWeather con las condiciones actuales.
+        """
+        result = self.get_forecast(latitude, longitude, timezone, forecast_days=1)
+        return result.current
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_current(data: dict) -> CurrentWeather:
+        """Parsea el bloque 'current' de la respuesta de Open-Meteo.
+
+        Args:
+            data: Diccionario completo de la respuesta de la API.
+
+        Returns:
+            CurrentWeather con los valores parseados.
+        """
+        current = data.get("current", {})
+        is_day_val = int(current.get("is_day", 1))
+
+        return CurrentWeather(
+            temperature=float(current.get("temperature_2m", 0.0)),
+            humidity=int(float(current.get("relative_humidity_2m", 0))),
+            feels_like=float(current.get("apparent_temperature", 0.0)),
+            symbol=int(current.get("weather_code", 0)),
+            clouds=int(float(current.get("cloud_cover", 0))),
+            wind_speed=int(float(current.get("wind_speed_10m", 0))),
+            wind_gust=int(float(current.get("wind_gusts_10m", 0))),
+            wind_direction=int(float(current.get("wind_direction_10m", 0))),
+            precipitation=float(current.get("precipitation", 0.0)),
+            precipitation_probability=int(
+                float(current.get("precipitation_probability", 0))
+            ),
+            is_day=is_day_val == 1,
+            pressure=int(float(current.get("pressure_msl", 0))),
+            uv_index=float(current.get("uv_index", 0.0)),
+        )

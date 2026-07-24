@@ -15,7 +15,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
-from meteowatch.api.client import MeteoredClient, MeteoredError
+from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
 from meteowatch.status_notifier import StatusNotifierItem
@@ -111,7 +111,7 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
     def _show_daily_forecast(self) -> None:
         """Muestra la página de pronóstico diario."""
-        logger.info("Navegando a: pronóstico diario (hash=%s)", self._config.location_hash)
+        logger.info("Navegando a: pronóstico diario (lat=%.4f, lon=%.4f)", self._config.latitude, self._config.longitude)
         page = DailyForecastPage(
             config=self._config,
             on_day_selected=self._on_day_selected,
@@ -133,11 +133,11 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         """Muestra la página de pronóstico por hora para un día específico.
 
         Args:
-            location_hash: Hash de la ubicación.
+            location_hash: Hash de la ubicación (no usado, mantenido por compatibilidad).
             day_start: Timestamp del inicio del día.
         """
-        logger.info("Navegando a: pronóstico por hora (hash=%s, start=%s)",
-                    location_hash, day_start)
+        logger.info("Navegando a: pronóstico por hora (start=%s)",
+                    day_start)
         page = HourlyForecastPage(
             config=self._config,
             location_hash=location_hash,
@@ -149,27 +149,28 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         """Callback cuando el usuario selecciona una ubicación.
 
         Args:
-            location_hash: Hash de la ubicación seleccionada.
+            location_hash: Hash de la ubicación (no usado, mantenido por compatibilidad).
             location_name: Nombre de la ubicación seleccionada.
         """
-        logger.info("Ubicación seleccionada: %s (%s)", location_name, location_hash)
+        logger.info("Ubicación seleccionada: %s", location_name)
         self._show_daily_forecast()
 
     def _on_day_selected(self, location_hash: str, day_start: int) -> None:
         """Callback cuando el usuario hace clic en un día.
 
         Args:
-            location_hash: Hash de la ubicación.
+            location_hash: Hash de la ubicación (no usado, mantenido por compatibilidad).
             day_start: Timestamp de inicio del día seleccionado.
         """
-        logger.info("Día seleccionado: %s (start=%s)", location_hash, day_start)
+        logger.info("Día seleccionado: start=%s", day_start)
         self._show_hourly_forecast(location_hash, day_start)
 
     def _on_change_location(self) -> None:
         """Callback para cambiar de ubicación (vuelve a búsqueda)."""
         logger.info("Cambiando ubicación...")
         # Limpiar ubicación guardada y volver a búsqueda
-        self._config.location_hash = ""
+        self._config.latitude = 0.0
+        self._config.longitude = 0.0
         self._config.location_name = ""
         self._config.save()
         self._show_location_search()
@@ -232,25 +233,23 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
         def do_refresh():
             try:
-                client = MeteoredClient(self._config.get_api_key())
-                hourly = client.get_hourly_forecast(self._config.location_hash)
-                if hourly.hours:
-                    now_ms = int(time.time() * 1000)
-                    closest = min(
-                        hourly.hours,
-                        key=lambda h: abs(h.end - now_ms),
+                client = OpenMeteoClient()
+                current = client.get_current_weather(
+                    self._config.latitude,
+                    self._config.longitude,
+                    self._config.timezone,
+                )
+                symbol = get_weather_symbol(current.symbol)
+                GLib.idle_add(
+                    self._on_weather_updated,
+                    symbol.emoji,
+                    current.temperature,
+                )
+                logger.info(
+                    "Tray actualizado (periódico): %s %.1f°C",
+                        symbol.emoji, current.temperature,
                     )
-                    symbol = get_weather_symbol(closest.symbol)
-                    GLib.idle_add(
-                        self._on_weather_updated,
-                        symbol.emoji,
-                        closest.temperature,
-                    )
-                    logger.info(
-                        "Tray actualizado (periódico): %s %.1f°C",
-                        symbol.emoji, closest.temperature,
-                    )
-            except MeteoredError as e:
+            except OpenMeteoError as e:
                 logger.warning("Error de API en refresco periódico: %s", e)
             except Exception:
                 logger.exception("Error inesperado en refresco periódico")

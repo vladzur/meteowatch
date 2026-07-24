@@ -18,9 +18,10 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 class AppConfig:
     """Configuración persistente de la aplicación."""
 
-    api_key: str = ""
-    location_hash: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
     location_name: str = ""
+    timezone: str = "auto"
     close_to_tray: bool = True
 
     @classmethod
@@ -35,10 +36,12 @@ class AppConfig:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            # Compatibilidad con configuraciones antiguas: ignorar api_key y location_hash
             return cls(
-                api_key=data.get("api_key", ""),
-                location_hash=data.get("location_hash", ""),
+                latitude=float(data.get("latitude", 0.0)),
+                longitude=float(data.get("longitude", 0.0)),
                 location_name=data.get("location_name", ""),
+                timezone=data.get("timezone", "auto"),
                 close_to_tray=data.get("close_to_tray", True),
             )
         except (json.JSONDecodeError, OSError):
@@ -52,25 +55,25 @@ class AppConfig:
         os.makedirs(CONFIG_DIR, exist_ok=True)
 
         data = {
-            "api_key": self.api_key,
-            "location_hash": self.location_hash,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
             "location_name": self.location_name,
+            "timezone": self.timezone,
             "close_to_tray": self.close_to_tray,
         }
 
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def get_api_key(self) -> str:
-        """Retorna la API key configurada."""
-        return self.api_key
-
-    def set_location(self, location_hash: str, location_name: str) -> None:
+    def set_location(self, latitude: float, longitude: float,
+                     location_name: str, timezone: str = "auto") -> None:
         """Actualiza la ubicación seleccionada y persiste los cambios."""
-        self.location_hash = location_hash
+        self.latitude = latitude
+        self.longitude = longitude
         self.location_name = location_name
+        self.timezone = timezone
         self.save()
 
     def is_configured(self) -> bool:
-        """Verifica si la aplicación tiene API key y ubicación configuradas."""
-        return bool(self.api_key and self.location_hash)
+        """Verifica si la aplicación tiene coordenadas configuradas."""
+        return self.latitude != 0.0 or self.longitude != 0.0

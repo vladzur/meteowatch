@@ -1,7 +1,7 @@
 """Punto de entrada de la aplicación Meteowatch.
 
 Inicia la aplicación GTK 4 + libadwaita para mostrar
-pronósticos meteorológicos de Meteored.
+pronósticos meteorológicos de Open-Meteo.
 """
 
 import sys
