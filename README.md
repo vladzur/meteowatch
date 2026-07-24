@@ -15,8 +15,13 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
   - Humedad, probabilidad de lluvia, viento y ráfagas
   - Amanecer, atardecer, presión, cota de nieve, índice UV y fase lunar
 - **Temperatura actual** obtenida de la hora más cercana del pronóstico
-- **Pronóstico por hora** de las próximas 24 horas
+- **Pronóstico por hora** de las próximas 24 horas con navegación de retroceso integrada
 - **Alerta de ráfagas de viento** ≥ 50 km/h (⚠️ en la UI)
+- **Icono en bandeja del sistema** (system tray) con:
+  - Icono dinámico que muestra emoji del clima + temperatura actual
+  - Minimizar al tray al cerrar la ventana (configurable)
+  - Refresco automático cada hora
+  - Protocolo `org.kde.StatusNotifierItem` (compatible con GNOME, KDE, XFCE)
 - **Zona horaria Chile** (`America/Santiago`, UTC-4/UTC-3 DST)
 - **Configuración persistente** en `~/.config/meteowatch/config.json`
 - **Empaquetado Flatpak** con GNOME SDK 49
@@ -72,13 +77,19 @@ meteowatch/
 │
 ├── flatpak-deps/                      # Wheels Python offline para build Flatpak
 │
+├── docs/
+│   └── tray_lessons_learned.md        # Lecciones aprendidas del system tray
+│
 ├── meteowatch/                        # Paquete principal
 │   ├── __init__.py
 │   ├── main.py                        # Punto de entrada
-│   ├── app.py                         # Adw.Application (ciclo de vida, CSS)
-│   ├── window.py                      # Ventana principal con NavigationView
+│   ├── app.py                         # Adw.Application (ciclo de vida, CSS, CLI)
+│   ├── window.py                      # Ventana principal con NavigationView + tray
 │   ├── config.py                      # Configuración JSON (~/.config/meteowatch/)
 │   ├── icons.py                       # Mapeo symbol → emoji (catálogo oficial 1-41)
+│   ├── status_notifier.py             # Protocolo SNI (org.kde.StatusNotifierItem)
+│   ├── tray_icon.py                   # Generación dinámica de iconos PNG (Cairo/Pango)
+│   ├── dbusmenu.py                    # Servidor D-Bus para menú contextual
 │   ├── api/
 │   │   ├── __init__.py
 │   │   └── client.py                  # Cliente HTTP MeteoredClient
@@ -95,9 +106,10 @@ meteowatch/
 │
 └── tests/
     ├── __init__.py
-    ├── test_config.py                 # Tests de configuración (9)
-    ├── test_models.py                 # Tests de modelos (12)
-    └── test_icons.py                  # Tests de símbolos (7)
+    ├── test_config.py                 # Tests de configuración
+    ├── test_icons.py                  # Tests de símbolos meteorológicos
+    ├── test_models.py                 # Tests de modelos de datos
+    └── test_tray_icon.py              # Tests de generación de iconos PNG
 ```
 
 ## 📋 Requisitos
@@ -120,6 +132,12 @@ pip install -e .
 
 # Ejecutar
 python -m meteowatch.main
+
+# Iniciar minimizado al tray
+python -m meteowatch.main --background
+
+# Desactivar el icono de bandeja
+python -m meteowatch.main --no-tray
 ```
 
 Al iniciar por primera vez, ingresa tu **API key de Meteored** y busca una ubicación. La configuración se guarda en `~/.config/meteowatch/config.json`.
@@ -130,18 +148,22 @@ Al iniciar por primera vez, ingresa tu **API key de Meteored** y busca una ubica
 # 1. Descargar dependencias Python (si se actualizan)
 python3 -m pip download --python-version 3.13 --only-binary=:all: requests setuptools -d flatpak-deps
 
-# 2. Construir
-flatpak-builder --force-clean --repo=repo build-dir com.meteowatch.app.json
+# 2. Construir e instalar directamente
+flatpak-builder --force-clean --user --install build-dir com.meteowatch.app.json
 
-# 3. Generar bundle instalable
-flatpak build-bundle repo meteowatch.flatpak com.meteowatch.app --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
-
-# 4. Instalar
-flatpak install --user meteowatch.flatpak
-
-# 5. Ejecutar
+# 3. Ejecutar
 flatpak run com.meteowatch.app
+
+# 4. (Opcional) Generar bundle para distribuir
+flatpak build-bundle repo meteowatch.flatpak com.meteowatch.app
 ```
+
+### Flags de línea de comandos
+
+| Flag | Descripción |
+|---|---|
+| `--background`, `-b` | Iniciar minimizado en la bandeja del sistema |
+| `--no-tray` | Desactivar completamente el icono de bandeja |
 
 ## 🧪 Tests
 
@@ -149,7 +171,7 @@ flatpak run com.meteowatch.app
 python -m pytest tests/ -v
 ```
 
-**28 tests unitarios** cubriendo configuración, modelos de datos y mapeo de símbolos meteorológicos.
+**37 tests unitarios** cubriendo configuración, modelos de datos, mapeo de símbolos meteorológicos y generación de iconos del tray.
 
 ## 🌐 API de Meteored
 
@@ -179,15 +201,19 @@ El mapeo de iconos usa el catálogo oficial de Meteored (`/api/doc/v1/forecast/s
 ## 🏗️ Arquitectura
 
 ```
-main.py → app.py (Adw.Application)
-            └── window.py (Adw.NavigationView)
+main.py → app.py (Adw.Application + flags CLI)
+            └── window.py (Adw.NavigationView + tray)
                   ├── LocationSearchPage   (API key + búsqueda)
                   ├── DailyForecastPage    (5 tarjetas expandidas)
-                  │     └── botón 24h →
-                  └── HourlyForecastPage   (horas filtradas, alertas viento)
+                  │     └── clic en día →
+                  └── HourlyForecastPage   (24h, alertas viento, ← botón volver)
+                  │
+                  └── StatusNotifierItem   (icono bandeja, protocolo SNI)
+                        └── tray_icon.py   (PNG vía Cairo/Pango)
 ```
 
-- **Navegación**: `Adw.NavigationView` con push/pop entre páginas
+- **Navegación**: `Adw.NavigationView` con push/pop entre páginas. `Adw.HeaderBar` con botón de retroceso automático.
+- **System tray**: Protocolo `org.kde.StatusNotifierItem` sobre D-Bus. Icono PNG generado con Cairo + Pango para control total del renderizado. Actualización horaria automática.
 - **Hilos**: Las llamadas a la API se ejecutan en threads separados con `GLib.idle_add` para actualizar la UI
 - **Rate limiting**: 1 segundo mínimo entre requests
 - **Timezone**: Timestamps UTC convertidos a `America/Santiago` vía `zoneinfo`
@@ -199,7 +225,7 @@ main.py → app.py (Adw.Application)
 | App ID | `com.meteowatch.app` |
 | Runtime | `org.gnome.Platform//49` |
 | SDK | `org.gnome.Sdk//49` |
-| Permisos | Wayland, X11 fallback, red, IPC |
+| Permisos | Wayland, X11 fallback, red, IPC, bus de sesión D-Bus |
 
 Las dependencias Python (`requests`, `urllib3`, `certifi`, `charset-normalizer`, `idna`, `setuptools`) se incluyen como wheels offline en `flatpak-deps/` para evitar acceso a red durante el build.
 
