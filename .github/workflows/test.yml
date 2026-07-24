@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            python3-gi-cairo \
+            python3-cairo \
+            python3-pytest \
+            python3-pip \
+            python3-requests \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            gobject-introspection \
+            libcairo2-dev \
+            libpango1.0-dev \
+            pkg-config \
+            xvfb
+
+      - name: Instalar meteowatch (modo editable)
+        run: |
+          python3 -m pip install --upgrade pip
+          # pygobject ya viene del sistema (python3-gi), se omite con --no-deps
+          pip install --no-deps -e .
+
+      - name: Ejecutar tests
+        run: xvfb-run python3 -m pytest tests/ -v --tb=short

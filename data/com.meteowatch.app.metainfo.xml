@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Meteowatch -->
+<component type="desktop-application">
+  <id>com.meteowatch.app</id>
+
+  <name>Meteowatch</name>
+  <summary>Pronóstico meteorológico con Meteored</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <description>
+    <p>
+      Meteowatch es una aplicación de escritorio para GNOME que te permite
+      consultar el pronóstico meteorológico detallado usando la API de Meteored.
+    </p>
+    <p>
+      Características principales:
+    </p>
+    <ul>
+      <li>Pronóstico diario de 5 días con temperaturas, humedad, viento, lluvia y más</li>
+      <li>Pronóstico por hora de las próximas 24 horas</li>
+      <li>Búsqueda de ubicaciones por nombre de ciudad</li>
+      <li>Icono en bandeja del sistema con temperatura actual</li>
+      <li>41 símbolos meteorológicos oficiales de Meteored</li>
+      <li>Alertas de ráfagas de viento ≥ 50 km/h</li>
+      <li>Datos de amanecer, atardecer, presión, índice UV y fase lunar</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Utility</category>
+    <category>Network</category>
+  </categories>
+
+  <url type="homepage">https://github.com/vladzur/meteowatch</url>
+  <url type="bugtracker">https://github.com/vladzur/meteowatch/issues</url>
+
+  <launchable type="desktop-id">com.meteowatch.app.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Pronóstico diario</caption>
+      <image>https://raw.githubusercontent.com/vladzur/meteowatch/master/data/screenshots/daily-forecast.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Búsqueda de ubicación</caption>
+      <image>https://raw.githubusercontent.com/vladzur/meteowatch/master/data/screenshots/location-search.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Pronóstico por hora</caption>
+      <image>https://raw.githubusercontent.com/vladzur/meteowatch/master/data/screenshots/hourly-forecast.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="1.0.0" date="2026-07-23">
+      <description>
+        <p>Primer lanzamiento de Meteowatch.</p>
+        <ul>
+          <li>Pronóstico diario de 5 días</li>
+          <li>Pronóstico por hora de 24 horas</li>
+          <li>Icono en bandeja del sistema con temperatura</li>
+          <li>Búsqueda de ubicaciones</li>
+          <li>Empaquetado Flatpak con GNOME SDK 49</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <developer id="com.meteowatch.app">
+    <name>Meteowatch</name>
+  </developer>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <recommends>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <memory>256</memory>
+  </recommends>
+</component>

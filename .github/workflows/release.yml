@@ -1,0 +1,62 @@
+name: Flatpak Build & Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            flatpak \
+            flatpak-builder \
+            python3-pip
+
+      - name: Configurar repositorios Flatpak
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.gnome.Sdk//49 org.gnome.Platform//49
+
+      - name: Construir Flatpak
+        run: |
+          flatpak-builder \
+            --user \
+            --install-deps-from=flathub \
+            --force-clean \
+            --repo=flatpak-repo \
+            build-dir \
+            com.meteowatch.app.json
+
+      - name: Crear bundle .flatpak
+        run: |
+          flatpak build-bundle \
+            flatpak-repo \
+            meteowatch.flatpak \
+            com.meteowatch.app \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Crear .flatpakref
+        run: |
+          cat > meteowatch.flatpakref << 'EOF'
+          [Flatpak Ref]
+          Name=com.meteowatch.app
+          Title=Meteowatch
+          Url=https://github.com/vladzur/meteowatch/releases/latest/download/meteowatch.flatpak
+          RuntimeRepo=https://flathub.org/repo/flathub.flatpakrepo
+          IsRuntime=false
+          EOF
+
+      - name: Subir assets al Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            meteowatch.flatpak
+            meteowatch.flatpakref
