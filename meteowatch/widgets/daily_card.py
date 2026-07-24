@@ -35,19 +35,22 @@ CLT = ZoneInfo("America/Santiago")
 class DailyForecastPage(Adw.NavigationPage):
     """Página que muestra el pronóstico diario para la ubicación seleccionada."""
 
-    def __init__(self, config: AppConfig, on_day_selected, on_change_location):
+    def __init__(self, config: AppConfig, on_day_selected, on_change_location,
+                 on_weather_updated=None):
         """Inicializa la página de pronóstico diario.
 
         Args:
             config: Configuración de la aplicación.
             on_day_selected: Callback(location_hash, day_start_timestamp) al hacer clic en un día.
             on_change_location: Callback() para volver a la pantalla de búsqueda.
+            on_weather_updated: Callback(symbol_emoji, temperature) al actualizar el clima.
         """
         super().__init__()
         self.set_title(config.location_name or "Meteowatch")
         self._config = config
         self._on_day_selected = on_day_selected
         self._on_change_location = on_change_location
+        self._on_weather_updated = on_weather_updated
         self._forecast: Optional[DailyForecast] = None
         self._build_ui()
 
@@ -152,6 +155,16 @@ class DailyForecastPage(Adw.NavigationPage):
                         )
                 except Exception:
                     logger.exception("No se pudo obtener la temperatura actual")
+
+                # Notificar al tray (vía callback de la ventana) los datos del clima
+                if self._on_weather_updated and current_symbol is not None:
+                    try:
+                        weather_symbol = get_weather_symbol(current_symbol)
+                        self._on_weather_updated(
+                            weather_symbol.emoji, current_temp
+                        )
+                    except Exception:
+                        logger.exception("Error al notificar actualización de clima al tray")
 
                 GLib.idle_add(self._on_forecast_loaded, forecast, current_temp, current_symbol)
             except MeteoredError as e:

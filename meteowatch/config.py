@@ -21,6 +21,7 @@ class AppConfig:
     api_key: str = ""
     location_hash: str = ""
     location_name: str = ""
+    close_to_tray: bool = True
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -38,6 +39,7 @@ class AppConfig:
                 api_key=data.get("api_key", ""),
                 location_hash=data.get("location_hash", ""),
                 location_name=data.get("location_name", ""),
+                close_to_tray=data.get("close_to_tray", True),
             )
         except (json.JSONDecodeError, OSError):
             return cls()
@@ -53,6 +55,7 @@ class AppConfig:
             "api_key": self.api_key,
             "location_hash": self.location_hash,
             "location_name": self.location_name,
+            "close_to_tray": self.close_to_tray,
         }
 
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:

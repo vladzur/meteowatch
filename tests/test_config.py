@@ -98,11 +98,47 @@ class TestAppConfig:
                     assert cfg.location_hash == "newhash"
                     assert cfg.location_name == "Valencia"
 
-                    # Verificar que se persistió
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        saved = json.load(f)
-                    assert saved["location_hash"] == "newhash"
-                    assert saved["location_name"] == "Valencia"
+    def test_close_to_tray_default_is_true(self):
+        """close_to_tray debe ser True por defecto."""
+        cfg = config_module.AppConfig()
+        assert cfg.close_to_tray is True
+
+    def test_close_to_tray_persists_correctly(self):
+        """close_to_tray debe guardarse y cargarse correctamente."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, ".config", "meteowatch")
+            config_path = os.path.join(config_dir, "config.json")
+
+            with patch.object(config_module, "CONFIG_DIR", config_dir):
+                with patch.object(config_module, "CONFIG_FILE", config_path):
+                    # Guardar con close_to_tray=False
+                    cfg = config_module.AppConfig(
+                        api_key="key123",
+                        location_hash="hash456",
+                        close_to_tray=False,
+                    )
+                    cfg.save()
+
+                    # Cargar y verificar
+                    loaded = config_module.AppConfig.load()
+                    assert loaded.close_to_tray is False
+                    assert loaded.api_key == "key123"
+
+    def test_load_missing_close_to_tray_defaults_to_true(self):
+        """Si close_to_tray no está en el JSON, debe usar True como valor por defecto."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, "config.json")
+            data = {
+                "api_key": "test-key",
+                "location_hash": "hash123",
+                # close_to_tray no está presente
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+            with patch.object(config_module, "CONFIG_FILE", config_path):
+                cfg = config_module.AppConfig.load()
+                assert cfg.close_to_tray is True
 
     def test_load_corrupted_json_returns_empty_config(self):
         """Debe retornar configuración vacía si el JSON está corrupto."""
