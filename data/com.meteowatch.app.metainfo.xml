@@ -18,13 +18,15 @@
       Características principales:
     </p>
     <ul>
-      <li>Pronóstico diario de 5 días con temperaturas, humedad, viento, lluvia y más</li>
-      <li>Pronóstico por hora de las próximas 24 horas</li>
+      <li>Pronóstico diario de 7 días con temperaturas, humedad, viento, lluvia y más</li>
+      <li>Pronóstico por hora con separadores visuales entre días</li>
       <li>Búsqueda de ubicaciones por nombre de ciudad</li>
       <li>Icono en bandeja del sistema con temperatura actual</li>
-      <li>Códigos meteorológicos WMO oficiales</li>
+      <li>Códigos meteorológicos WMO oficiales (cobertura completa)</li>
       <li>Alertas de ráfagas de viento ≥ 50 km/h</li>
       <li>Datos de amanecer, atardecer, precipitación e índice UV</li>
+      <li>Atribución a Open-Meteo y diálogo "Acerca de"</li>
+      <li>Cambio de ubicación accesible desde cualquier pantalla</li>
     </ul>
   </description>
 
@@ -56,15 +58,17 @@
   <releases>
     <release version="1.1.0" date="2026-07-24">
       <description>
-        <p>Migración del origen de datos de MeteoRed a Open-Meteo.</p>
+        <p>Migración del origen de datos de MeteoRed a Open-Meteo y mejoras de usabilidad.</p>
         <ul>
-          <li>API gratuita sin clave de autenticación</li>
-          <li>Mayor precisión en los pronósticos</li>
+          <li>Migración a la API gratuita de Open-Meteo (sin clave de autenticación)</li>
+          <li>Separación visual entre días en el pronóstico por hora</li>
+          <li>Atribución a Open-Meteo en la interfaz y diálogo "Acerca de"</li>
+          <li>Cambio de ubicación accesible desde cualquier pantalla</li>
+          <li>Cobertura completa de códigos meteorológicos WMO (96 códigos)</li>
+          <li>Unidades de temperatura normalizadas (°C) en toda la interfaz</li>
           <li>Zona horaria dinámica según la ubicación</li>
           <li>Condiciones actuales obtenidas directamente del endpoint de Open-Meteo</li>
-          <li>Códigos meteorológicos estándar WMO</li>
-          <li>Dirección del viento en grados con formato cardinal</li>
-          <li>Se elimina la dependencia de clave API (ya no se requiere configuración inicial)</li>
+          <li>Se elimina la dependencia de clave API</li>
         </ul>
       </description>
     </release>
