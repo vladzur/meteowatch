@@ -60,6 +60,11 @@ class HourlyForecastPage(Adw.NavigationPage):
         toolbar_view = Adw.ToolbarView()
         self.set_child(toolbar_view)
 
+        # Header bar — el botón de retroceso lo provee automáticamente Adw.NavigationView
+        header = Adw.HeaderBar()
+        header.set_show_title(True)
+        toolbar_view.add_top_bar(header)
+
         # Contenido con scroll
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
