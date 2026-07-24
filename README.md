@@ -1,6 +1,6 @@
 # 🌦️ Meteowatch
 
-Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usando la API de Meteored. Construida con **GTK 4 + libadwaita** y **Python 3**.
+Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usando la API gratuita de Open-Meteo. Construida con **GTK 4 + libadwaita** y **Python 3**.
 
 <p align="center">
   <img src="data/com.meteowatch.app.svg" alt="Meteowatch icon" width="96" height="96">
@@ -11,10 +11,10 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
 - **Búsqueda de ubicaciones** por nombre de ciudad
 - **Pronóstico diario** de 5 días con tarjetas detalladas:
   - Temperaturas máximas y mínimas
-  - Condición climática con icono (41 símbolos oficiales de Meteored)
+  - Condición climática con icono (códigos WMO oficiales)
   - Humedad, probabilidad de lluvia, viento y ráfagas
-  - Amanecer, atardecer, presión, cota de nieve, índice UV y fase lunar
-- **Temperatura actual** obtenida de la hora más cercana del pronóstico
+  - Amanecer, atardecer, precipitación e índice UV
+- **Temperatura actual** obtenida del endpoint de condiciones actuales
 - **Pronóstico por hora** de las próximas 24 horas con navegación de retroceso integrada
 - **Alerta de ráfagas de viento** ≥ 50 km/h (⚠️ en la UI)
 - **Icono en bandeja del sistema** (system tray) con:
@@ -22,7 +22,7 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
   - Minimizar al tray al cerrar la ventana (configurable)
   - Refresco automático cada hora
   - Protocolo `org.kde.StatusNotifierItem` (compatible con GNOME, KDE, XFCE)
-- **Zona horaria Chile** (`America/Santiago`, UTC-4/UTC-3 DST)
+- **Zona horaria dinámica** según la ubicación seleccionada
 - **Configuración persistente** en `~/.config/meteowatch/config.json`
 - **Empaquetado Flatpak** con GNOME SDK 49
 
@@ -44,17 +44,16 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
 │  │     20 de julio    2°          │  │
 │  │     Niebla                     │  │
 │  │ ────────────────────────────── │  │
-│  │ 💧86%  🌧️0%   💨8 km/h SE   │  │
+│  │ 💧—  🌧️0%   💨8 km/h N   │  │
 │  │ ↗️18    🌅08:02  🌇17:55      │  │
-│  │ 📊1013 🏔️1600  ☀️UV 1.6     │  │
-│  │ 🌙42%                          │  │
+│  │ 🌧️0.0mm ☀️UV 1.6            │  │
 │  └────────────────────────────────┘  │
 │  ┌────────────────────────────────┐  │
 │  │ 🌧️  Mañana       13°         │  │
 │  │     21 de julio    1°          │  │
 │  │     Lluvia ligera              │  │
 │  │ ────────────────────────────── │  │
-│  │ 💧74%  🌧️90%  💨19 km/h E   │  │
+│  │ 💧—  🌧️90%  💨19 km/h E   │  │
 │  │ ⚠️ ↗️36  🌅08:03  🌇17:54    │  │
 │  │ ...                            │  │
 │  └────────────────────────────────┘  │
@@ -67,7 +66,6 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
 meteowatch/
 ├── pyproject.toml                     # Proyecto Python, dependencias, entry point
 ├── com.meteowatch.app.json            # Manifiesto Flatpak (GNOME SDK 49)
-├── meteored_openapi.yml               # Especificación OpenAPI de Meteored
 ├── README.md
 ├── .gitignore
 │
@@ -86,13 +84,13 @@ meteowatch/
 │   ├── app.py                         # Adw.Application (ciclo de vida, CSS, CLI)
 │   ├── window.py                      # Ventana principal con NavigationView + tray
 │   ├── config.py                      # Configuración JSON (~/.config/meteowatch/)
-│   ├── icons.py                       # Mapeo symbol → emoji (catálogo oficial 1-41)
+│   ├── icons.py                       # Mapeo symbol → emoji (códigos WMO)
 │   ├── status_notifier.py             # Protocolo SNI (org.kde.StatusNotifierItem)
 │   ├── tray_icon.py                   # Generación dinámica de iconos PNG (Cairo/Pango)
 │   ├── dbusmenu.py                    # Servidor D-Bus para menú contextual
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── client.py                  # Cliente HTTP MeteoredClient
+│   │   └── client.py                  # Cliente HTTP OpenMeteoClient
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── location.py                # Location (búsqueda)
@@ -140,7 +138,7 @@ python -m meteowatch.main --background
 python -m meteowatch.main --no-tray
 ```
 
-Al iniciar por primera vez, ingresa tu **API key de Meteored** y busca una ubicación. La configuración se guarda en `~/.config/meteowatch/config.json`.
+Al iniciar por primera vez, busca una ubicación. No se requiere clave de API. La configuración se guarda en `~/.config/meteowatch/config.json`.
 
 ### Flatpak
 
@@ -171,32 +169,31 @@ flatpak build-bundle repo meteowatch.flatpak com.meteowatch.app
 python -m pytest tests/ -v
 ```
 
-**37 tests unitarios** cubriendo configuración, modelos de datos, mapeo de símbolos meteorológicos y generación de iconos del tray.
+**54 tests unitarios** cubriendo configuración, modelos de datos, mapeo de símbolos meteorológicos, cliente HTTP y generación de iconos del tray.
 
-## 🌐 API de Meteored
+## 🌐 API de Open-Meteo
 
-La aplicación consume tres endpoints. Autenticación vía header `x-api-key`.
+La aplicación consume dos APIs públicas sin autenticación:
 
-| Endpoint | Método | Descripción |
+| Endpoint | Descripción |
+|---|---|
+| [Geocoding API](https://open-meteo.com/en/docs/geocoding-api) | Búsqueda de ubicación por texto → retorna coordenadas y zona horaria |
+| [Forecast API](https://open-meteo.com/en/docs) | Pronóstico diario, por hora y condiciones actuales en una sola llamada |
+
+### Códigos meteorológicos WMO
+
+El mapeo de iconos usa los códigos estándar WMO:
+
+| Código | Descripción | Emoji |
 |---|---|---|
-| `/api/location/v1/search/txt/{text}` | `GET` | Búsqueda de ubicación por texto → retorna `hash` |
-| `/api/forecast/v1/daily/{hash}` | `GET` | Pronóstico diario (5 días en array `days`) |
-| `/api/forecast/v1/hourly/{hash}` | `GET` | Pronóstico por hora (24h en array `hours`) |
-
-### Símbolos meteorológicos
-
-El mapeo de iconos usa el catálogo oficial de Meteored (`/api/doc/v1/forecast/symbol`), con 41 símbolos numerados del 1 al 41:
-
-| ID | Descripción | Emoji |
-|---|---|---|
-| 1 | Despejado | ☀️ |
-| 4 | Parcialmente nublado | ⛅ |
-| 5 | Nublado | ☁️ |
-| 9 | Niebla | 🌫️ |
-| 12 | Lluvia ligera | 🌦️ |
-| 15 | Lluvia moderada | 🌧️ |
-| 24 | Nieve | 🌨️ |
-| 34 | Tormenta | ⛈️ |
+| 0 | Despejado | ☀️ |
+| 1 | Mayormente despejado | 🌤️ |
+| 3 | Nublado | ☁️ |
+| 45 | Niebla | 🌫️ |
+| 61 | Lluvia ligera | 🌦️ |
+| 63 | Lluvia moderada | 🌧️ |
+| 71 | Nieve ligera | 🌨️ |
+| 95 | Tormenta | ⛈️ |
 
 ## 🏗️ Arquitectura
 
@@ -215,8 +212,7 @@ main.py → app.py (Adw.Application + flags CLI)
 - **Navegación**: `Adw.NavigationView` con push/pop entre páginas. `Adw.HeaderBar` con botón de retroceso automático.
 - **System tray**: Protocolo `org.kde.StatusNotifierItem` sobre D-Bus. Icono PNG generado con Cairo + Pango para control total del renderizado. Actualización horaria automática.
 - **Hilos**: Las llamadas a la API se ejecutan en threads separados con `GLib.idle_add` para actualizar la UI
-- **Rate limiting**: 1 segundo mínimo entre requests
-- **Timezone**: Timestamps UTC convertidos a `America/Santiago` vía `zoneinfo`
+- **Timezone**: Zona horaria dinámica según la ubicación (vía API de geocoding y `zoneinfo`)
 
 ## 📦 Flatpak
 
