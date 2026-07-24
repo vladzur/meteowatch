@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Meteowatch
-Comment=Pronóstico meteorológico con Meteored
+Comment=Pronóstico meteorológico con Open-Meteo
 Exec=meteowatch
 Icon=com.meteowatch.app
 Terminal=false

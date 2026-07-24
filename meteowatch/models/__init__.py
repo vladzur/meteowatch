@@ -1,4 +1,4 @@
-"""Modelos de datos de la API de Meteored."""
+"""Modelos de datos de la API de Open-Meteo."""
 
 from meteowatch.models.location import Location
 from meteowatch.models.daily import DailyForecast, DayData

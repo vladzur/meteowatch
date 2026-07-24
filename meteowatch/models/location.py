@@ -1,28 +1,42 @@
-"""Modelo de datos para ubicación geográfica."""
+"""Modelo de datos para ubicación geográfica (Open-Meteo Geocoding API)."""
 
 from dataclasses import dataclass
 
 
 @dataclass
 class Location:
-    """Representa una ubicación geográfica devuelta por la búsqueda de la API."""
+    """Representa una ubicación geográfica devuelta por la API de geocoding."""
 
-    hash: str
+    id: int
     name: str
-    description: str
-    country_name: str
+    latitude: float
+    longitude: float
+    country: str
+    country_code: str
+    admin1: str
+    timezone: str
+    elevation: float
 
     @classmethod
     def from_dict(cls, data: dict) -> "Location":
-        """Construye una instancia de Location desde un diccionario de la API."""
+        """Construye una instancia de Location desde un diccionario de la API de geocoding de Open-Meteo."""
         return cls(
-            hash=data.get("hash", ""),
+            id=int(data.get("id", 0)),
             name=data.get("name", ""),
-            description=data.get("description", ""),
-            country_name=data.get("country_name", ""),
+            latitude=float(data.get("latitude", 0.0)),
+            longitude=float(data.get("longitude", 0.0)),
+            country=data.get("country", ""),
+            country_code=data.get("country_code", ""),
+            admin1=data.get("admin1", ""),
+            timezone=data.get("timezone", "UTC"),
+            elevation=float(data.get("elevation", 0.0)),
         )
 
     @property
     def display_name(self) -> str:
         """Nombre descriptivo para mostrar en la UI."""
-        return f"{self.name}, {self.description} ({self.country_name})"
+        result = self.name
+        if self.admin1:
+            result += f", {self.admin1}"
+        result += f" ({self.country})"
+        return result

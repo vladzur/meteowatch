@@ -1,6 +1,7 @@
-"""Mapeo de símbolos meteorológicos de la API de Meteored a emojis y descripciones.
+"""Mapeo de símbolos meteorológicos WMO a emojis y descripciones.
 
-Los códigos provienen del endpoint /api/doc/v1/forecast/symbol (IDs 1–41).
+Los códigos siguen el estándar WMO Weather interpretation codes.
+Ver: https://open-meteo.com/en/docs#weathervariables
 """
 
 from typing import NamedTuple
@@ -13,54 +14,41 @@ class WeatherSymbol(NamedTuple):
     description: str
 
 
-# Mapeo oficial de símbolos de Meteored (basado en /api/doc/v1/forecast/symbol)
+# Mapeo de códigos WMO a emojis y descripciones en español
 SYMBOL_MAP: dict[int, WeatherSymbol] = {
-    1: WeatherSymbol("☀️", "Despejado"),
-    2: WeatherSymbol("🌤️", "Nubes altas"),
-    3: WeatherSymbol("⛅", "Nubes dispersas"),
-    4: WeatherSymbol("⛅", "Parcialmente nublado"),
-    5: WeatherSymbol("☁️", "Nublado"),
-    6: WeatherSymbol("🌫️", "Neblina de polvo"),
-    7: WeatherSymbol("🌫️", "Neblina de polvo"),
-    8: WeatherSymbol("🌫️", "Neblina"),
-    9: WeatherSymbol("🌫️", "Niebla"),
-    10: WeatherSymbol("⛈️", "Tormenta seca"),
-    11: WeatherSymbol("⛈️", "Tormenta seca"),
-    12: WeatherSymbol("🌦️", "Lluvia ligera"),
-    13: WeatherSymbol("🌧️", "Lluvia ligera"),
-    14: WeatherSymbol("🌦️", "Lluvia moderada"),
-    15: WeatherSymbol("🌧️", "Lluvia moderada"),
-    16: WeatherSymbol("🌧️", "Lluvia con polvo"),
-    17: WeatherSymbol("🌧️", "Lluvia con polvo"),
-    18: WeatherSymbol("🌨️", "Lluvia helada"),
-    19: WeatherSymbol("🌨️", "Lluvia helada"),
-    20: WeatherSymbol("🌨️", "Lluvia y nieve"),
-    21: WeatherSymbol("🌨️", "Lluvia y nieve"),
-    22: WeatherSymbol("🌨️", "Nieve y lluvia con polvo"),
-    23: WeatherSymbol("🌨️", "Nieve y lluvia con polvo"),
-    24: WeatherSymbol("🌨️", "Nieve"),
-    25: WeatherSymbol("🌨️", "Nieve"),
-    26: WeatherSymbol("🌨️", "Nieve con polvo"),
-    27: WeatherSymbol("🌨️", "Nieve con polvo"),
-    28: WeatherSymbol("🌧️", "Lluvia fuerte"),
-    29: WeatherSymbol("🌧️", "Lluvia fuerte"),
-    30: WeatherSymbol("🌨️", "Lluvia y nieve fuertes"),
-    31: WeatherSymbol("🌨️", "Lluvia y nieve fuertes"),
-    32: WeatherSymbol("❄️", "Nieve fuerte"),
-    33: WeatherSymbol("❄️", "Nieve fuerte"),
-    34: WeatherSymbol("⛈️", "Tormenta"),
-    35: WeatherSymbol("⛈️", "Tormenta"),
-    36: WeatherSymbol("🌨️", "Granizo"),
-    37: WeatherSymbol("🌨️", "Granizo"),
-    38: WeatherSymbol("⛈️", "Tormenta con granizo"),
-    39: WeatherSymbol("⛈️", "Tormenta con granizo"),
-    40: WeatherSymbol("🌪️", "Tormenta de polvo"),
-    41: WeatherSymbol("🌨️", "Ventisca"),
+    0: WeatherSymbol("☀️", "Despejado"),
+    1: WeatherSymbol("🌤️", "Mayormente despejado"),
+    2: WeatherSymbol("⛅", "Parcialmente nublado"),
+    3: WeatherSymbol("☁️", "Nublado"),
+    45: WeatherSymbol("🌫️", "Niebla"),
+    48: WeatherSymbol("🌫️", "Niebla con escarcha"),
+    51: WeatherSymbol("🌦️", "Llovizna ligera"),
+    53: WeatherSymbol("🌦️", "Llovizna moderada"),
+    55: WeatherSymbol("🌧️", "Llovizna densa"),
+    56: WeatherSymbol("🌨️", "Llovizna helada ligera"),
+    57: WeatherSymbol("🌨️", "Llovizna helada densa"),
+    61: WeatherSymbol("🌦️", "Lluvia ligera"),
+    63: WeatherSymbol("🌧️", "Lluvia moderada"),
+    65: WeatherSymbol("🌧️", "Lluvia fuerte"),
+    66: WeatherSymbol("🌨️", "Lluvia helada ligera"),
+    67: WeatherSymbol("🌨️", "Lluvia helada fuerte"),
+    71: WeatherSymbol("🌨️", "Nieve ligera"),
+    73: WeatherSymbol("🌨️", "Nieve moderada"),
+    75: WeatherSymbol("❄️", "Nieve fuerte"),
+    77: WeatherSymbol("🌨️", "Granizo blando"),
+    80: WeatherSymbol("🌦️", "Chubascos ligeros"),
+    81: WeatherSymbol("🌧️", "Chubascos moderados"),
+    82: WeatherSymbol("⛈️", "Chubascos fuertes"),
+    85: WeatherSymbol("🌨️", "Chubascos de nieve ligeros"),
+    86: WeatherSymbol("🌨️", "Chubascos de nieve fuertes"),
+    95: WeatherSymbol("⛈️", "Tormenta"),
+    96: WeatherSymbol("⛈️", "Tormenta con granizo ligero"),
+    99: WeatherSymbol("⛈️", "Tormenta con granizo fuerte"),
 }
 
 
 def get_weather_symbol(code: int) -> WeatherSymbol:
-    """Retorna el emoji y descripción para un código de símbolo meteorológico.
+    """Retorna el emoji y descripción para un código de símbolo meteorológico WMO.
 
     Si el código no está mapeado, retorna un símbolo genérico.
     """

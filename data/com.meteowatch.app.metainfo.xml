@@ -4,7 +4,7 @@
   <id>com.meteowatch.app</id>
 
   <name>Meteowatch</name>
-  <summary>Pronóstico meteorológico con Meteored</summary>
+  <summary>Pronóstico meteorológico con Open-Meteo</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -12,7 +12,7 @@
   <description>
     <p>
       Meteowatch es una aplicación de escritorio para GNOME que te permite
-      consultar el pronóstico meteorológico detallado usando la API de Meteored.
+      consultar el pronóstico meteorológico detallado usando la API gratuita de Open-Meteo.
     </p>
     <p>
       Características principales:
@@ -22,9 +22,9 @@
       <li>Pronóstico por hora de las próximas 24 horas</li>
       <li>Búsqueda de ubicaciones por nombre de ciudad</li>
       <li>Icono en bandeja del sistema con temperatura actual</li>
-      <li>41 símbolos meteorológicos oficiales de Meteored</li>
+      <li>Códigos meteorológicos WMO oficiales</li>
       <li>Alertas de ráfagas de viento ≥ 50 km/h</li>
-      <li>Datos de amanecer, atardecer, presión, índice UV y fase lunar</li>
+      <li>Datos de amanecer, atardecer, precipitación e índice UV</li>
     </ul>
   </description>
 
@@ -54,6 +54,20 @@
   </screenshots>
 
   <releases>
+    <release version="1.1.0" date="2026-07-24">
+      <description>
+        <p>Migración del origen de datos de MeteoRed a Open-Meteo.</p>
+        <ul>
+          <li>API gratuita sin clave de autenticación</li>
+          <li>Mayor precisión en los pronósticos</li>
+          <li>Zona horaria dinámica según la ubicación</li>
+          <li>Condiciones actuales obtenidas directamente del endpoint de Open-Meteo</li>
+          <li>Códigos meteorológicos estándar WMO</li>
+          <li>Dirección del viento en grados con formato cardinal</li>
+          <li>Se elimina la dependencia de clave API (ya no se requiere configuración inicial)</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-07-23">
       <description>
         <p>Primer lanzamiento de Meteowatch.</p>

@@ -1,7 +1,7 @@
 """Página de búsqueda y configuración de ubicación.
 
-Permite al usuario introducir su API key y buscar una ubicación
-para obtener el pronóstico meteorológico.
+Permite al usuario buscar una ubicación para obtener
+el pronóstico meteorológico desde Open-Meteo.
 """
 
 import logging
@@ -14,7 +14,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from meteowatch.api.client import MeteoredClient, MeteoredError
+from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.models.location import Location
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocationSearchPage(Adw.NavigationPage):
-    """Página de configuración inicial: API key + búsqueda de ubicación."""
+    """Página de configuración inicial: búsqueda de ubicación."""
 
     def __init__(self, config: AppConfig, on_location_selected):
         """Inicializa la página de búsqueda de ubicación.
@@ -70,42 +70,13 @@ class LocationSearchPage(Adw.NavigationPage):
 
         subtitle = Gtk.Label()
         subtitle.set_label(
-            "Para comenzar, introduce tu clave de API de Meteored\n"
-            "y busca una ubicación."
+            "Para comenzar, busca una ubicación\n"
+            "para ver el pronóstico meteorológico."
         )
         subtitle.set_halign(Gtk.Align.CENTER)
         subtitle.set_justify(Gtk.Justification.CENTER)
         subtitle.set_wrap(True)
         vbox.append(subtitle)
-
-        # --- Sección API Key ---
-        api_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        vbox.append(api_section)
-
-        api_label = Gtk.Label()
-        api_label.set_markup("<b>Clave de API</b>")
-        api_label.set_halign(Gtk.Align.START)
-        api_label.set_xalign(0)
-        api_section.append(api_label)
-
-        self._api_entry = Gtk.Entry()
-        self._api_entry.set_placeholder_text("Introduce tu x-api-key...")
-        self._api_entry.set_visibility(False)  # Oculta el texto como contraseña
-        if self._config.api_key:
-            self._api_entry.set_text(self._config.api_key)
-        api_section.append(self._api_entry)
-
-        save_key_btn = Gtk.Button()
-        save_key_btn.set_label("Guardar clave")
-        save_key_btn.add_css_class("pill")
-        save_key_btn.add_css_class("suggested-action")
-        save_key_btn.set_halign(Gtk.Align.CENTER)
-        save_key_btn.connect("clicked", self._on_save_api_key)
-        api_section.append(save_key_btn)
-
-        # Separador
-        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        vbox.append(separator)
 
         # --- Sección Búsqueda de ubicación ---
         search_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -157,32 +128,11 @@ class LocationSearchPage(Adw.NavigationPage):
         self._status_label.add_css_class("error")
         search_section.append(self._status_label)
 
-    def _on_save_api_key(self, button: Gtk.Button) -> None:
-        """Guarda la API key en la configuración."""
-        api_key = self._api_entry.get_text().strip()
-        if api_key:
-            self._config.api_key = api_key
-            self._config.save()
-            self._show_status("Clave guardada correctamente.", is_error=False)
-
-    def _on_search_changed(self, entry: Gtk.SearchEntry) -> None:
-        """Reacciona a cambios en el campo de búsqueda."""
-        # Reiniciar UI si se borra el texto
-        if not entry.get_text().strip():
-            self._results_list.set_visible(False)
-            self._results_label.set_visible(False)
-            self._status_label.set_visible(False)
-
     def _on_search(self, widget) -> None:
         """Ejecuta la búsqueda de ubicación en la API."""
         query = self._search_entry.get_text().strip()
         if not query:
             self._show_status("Introduce un texto para buscar.", is_error=True)
-            return
-
-        api_key = self._config.get_api_key()
-        if not api_key:
-            self._show_status("Primero guarda tu clave de API.", is_error=True)
             return
 
         # Mostrar spinner
@@ -195,15 +145,23 @@ class LocationSearchPage(Adw.NavigationPage):
         # Ejecutar búsqueda en segundo plano
         def do_search():
             try:
-                client = MeteoredClient(api_key)
+                client = OpenMeteoClient()
                 locations = client.search_location(query)
                 GLib.idle_add(self._on_search_result, locations)
-            except MeteoredError as e:
+            except OpenMeteoError as e:
                 GLib.idle_add(self._on_search_error, str(e))
 
         import threading
         thread = threading.Thread(target=do_search, daemon=True)
         thread.start()
+
+    def _on_search_changed(self, entry: Gtk.SearchEntry) -> None:
+        """Reacciona a cambios en el campo de búsqueda."""
+        # Reiniciar UI si se borra el texto
+        if not entry.get_text().strip():
+            self._results_list.set_visible(False)
+            self._results_label.set_visible(False)
+            self._status_label.set_visible(False)
 
     def _on_search_result(self, locations: list[Location]) -> None:
         """Muestra los resultados de búsqueda en la lista."""
@@ -256,8 +214,13 @@ class LocationSearchPage(Adw.NavigationPage):
         if location is None:
             return
 
-        self._config.set_location(location.hash, location.name)
-        self._on_location_selected(location.hash, location.name)
+        self._config.set_location(
+            location.latitude,
+            location.longitude,
+            location.name,
+            location.timezone,
+        )
+        self._on_location_selected(location.name, location.name)
 
     def _show_status(self, message: str, is_error: bool = True) -> None:
         """Muestra un mensaje de estado (éxito o error)."""

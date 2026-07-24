@@ -52,9 +52,9 @@ class MeteowatchApp(Adw.Application):
     def do_activate(self) -> None:
         """Activa la aplicación y crea la ventana principal."""
         logger.info("Activando Meteowatch (tray=%s)...", self._enable_tray)
-        logger.info("Configuración: api_key=%s..., location_hash=%s, location_name=%s, configured=%s",
-                    self._config.api_key[:8] if self._config.api_key else "(vacía)",
-                    self._config.location_hash or "(vacío)",
+        logger.info("Configuración: latitude=%s, longitude=%s, location_name=%s, configured=%s",
+                    self._config.latitude,
+                    self._config.longitude,
                     self._config.location_name or "(vacío)",
                     self._config.is_configured())
         self._window = MeteowatchWindow(

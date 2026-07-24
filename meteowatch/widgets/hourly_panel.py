@@ -16,15 +16,21 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from meteowatch.api.client import MeteoredClient, MeteoredError
+from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
 from meteowatch.models.hourly import HourData, HourlyForecast
 
 logger = logging.getLogger(__name__)
 
-# Zona horaria de Chile (UTC-4 estándar, UTC-3 verano)
-CLT = ZoneInfo("America/Santiago")
+
+def _degrees_to_cardinal(degrees: int) -> str:
+    """Convierte una dirección en grados (0-360) a punto cardinal."""
+    if degrees < 0:
+        return "?"
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    index = round(degrees / 45) % 8
+    return directions[index]
 
 
 class HourlyForecastPage(Adw.NavigationPage):
@@ -35,23 +41,28 @@ class HourlyForecastPage(Adw.NavigationPage):
 
         Args:
             config: Configuración de la aplicación.
-            location_hash: Hash de la ubicación.
+            location_hash: No usado (mantenido por compatibilidad).
             day_start: Timestamp del inicio del día seleccionado.
         """
         super().__init__()
 
-        logger.info("Creando página de pronóstico por hora: hash=%s, day_start=%s",
-                    location_hash, day_start)
+        logger.info("Creando página de pronóstico por hora: day_start=%s", day_start)
 
-        # Formatear la fecha del día como título (hora chilena)
-        dt = datetime.fromtimestamp(day_start / 1000, tz=CLT)
+        # Obtener la zona horaria desde la configuración
+        try:
+            tz = ZoneInfo(config.timezone) if config.timezone != "auto" else ZoneInfo("UTC")
+        except Exception:
+            tz = ZoneInfo("UTC")
+
+        # Formatear la fecha del día como título
+        dt = datetime.fromtimestamp(day_start / 1000, tz=tz)
         date_str = dt.strftime("%A %d de %B")
         # Capitalizar primera letra
         date_str = date_str[0].upper() + date_str[1:]
         self.set_title(date_str)
 
         self._config = config
-        self._location_hash = location_hash
+        self._timezone = tz
         self._day_start = day_start
         self._build_ui()
 
@@ -102,15 +113,20 @@ class HourlyForecastPage(Adw.NavigationPage):
 
     def _load_hourly_forecast(self) -> None:
         """Carga el pronóstico por hora desde la API en segundo plano."""
-        logger.info("Cargando pronóstico por hora para hash=%s...", self._location_hash)
+        logger.info("Cargando pronóstico por hora para lat=%.4f, lon=%.4f...",
+                    self._config.latitude, self._config.longitude)
 
         def do_load():
             try:
-                client = MeteoredClient(self._config.get_api_key())
-                forecast = client.get_hourly_forecast(self._location_hash)
+                client = OpenMeteoClient()
+                forecast = client.get_hourly_forecast(
+                    self._config.latitude,
+                    self._config.longitude,
+                    self._config.timezone,
+                )
                 logger.info("Pronóstico por hora cargado: %d horas", len(forecast.hours))
                 GLib.idle_add(self._on_forecast_loaded, forecast)
-            except MeteoredError as e:
+            except OpenMeteoError as e:
                 logger.exception("Error de API al cargar pronóstico por hora")
                 GLib.idle_add(self._on_forecast_error, str(e))
             except Exception:
@@ -184,7 +200,7 @@ class HourlyForecastPage(Adw.NavigationPage):
         # Indicador de alerta de viento
         gust_alert = hour_data.wind_gust >= 50
 
-        hour_str = datetime.fromtimestamp(hour_data.end / 1000, tz=CLT).strftime("%H:%M")
+        hour_str = datetime.fromtimestamp(hour_data.end / 1000, tz=self._timezone).strftime("%H:%M")
         hour_label = Gtk.Label()
         if gust_alert:
             hour_label.set_markup(f"<b>⚠️ {hour_str}</b>")
