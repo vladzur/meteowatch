@@ -128,6 +128,11 @@ class MeteowatchApp(Adw.Application):
         quit_action.connect("activate", self._on_quit_action)
         self.add_action(quit_action)
 
+        # Acción "Acerca de"
+        about_action = Gio.SimpleAction.new("about", None)
+        about_action.connect("activate", self._on_about_action)
+        self.add_action(about_action)
+
     def _on_quit_action(self, action, param) -> None:
         """Acción 'quit': fuerza el cierre real de la aplicación.
 
@@ -138,6 +143,29 @@ class MeteowatchApp(Adw.Application):
         if self._window is not None:
             self._window.force_quit = True
         self.quit()
+
+    def _on_about_action(self, action, param) -> None:
+        """Acción 'about': muestra el diálogo Acerca de con atribución a Open-Meteo."""
+        logger.info("Mostrando diálogo Acerca de")
+
+        # Evitamos new_from_appdata porque la ruta /app/share/metainfo/
+        # solo existe dentro del sandbox de Flatpak y causa un crash fatal
+        # si no se encuentra el archivo.
+        dialog = Adw.AboutDialog()
+        dialog.set_application_name("Meteowatch")
+        dialog.set_application_icon("com.meteowatch.app")
+        dialog.set_version("1.0.0")
+        dialog.set_developer_name("vladzur")
+        dialog.set_website("https://github.com/vladzur/meteowatch")
+        dialog.set_copyright("© 2026 vladzur")
+        dialog.set_license_type(Gtk.License.GPL_3_0)
+        dialog.set_comments(
+            "Datos meteorológicos proporcionados por Open-Meteo (open-meteo.com)"
+        )
+        dialog.set_developers(["vladzur"])
+        dialog.set_designers(["vladzur"])
+
+        dialog.present(self._window)
 
     def _load_css(self) -> None:
         """Carga estilos CSS personalizados para la aplicación."""
@@ -153,6 +181,10 @@ class MeteowatchApp(Adw.Application):
                 background-color: @card_bg_color;
                 border-radius: 12px;
                 padding: 16px;
+            }
+            .day-separator {
+                background-color: alpha(@accent_bg_color, 0.12);
+                border-bottom: 1px solid alpha(@borders, 0.3);
             }
         """)
 

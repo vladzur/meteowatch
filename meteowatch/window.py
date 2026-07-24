@@ -142,6 +142,7 @@ class MeteowatchWindow(Adw.ApplicationWindow):
             config=self._config,
             location_hash=location_hash,
             day_start=day_start,
+            on_change_location=self._on_change_location,
         )
         self._navigation.push(page)
 

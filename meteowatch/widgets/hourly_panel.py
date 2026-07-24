@@ -1,10 +1,11 @@
 """Página de pronóstico detallado por hora.
 
-Muestra el desglose hora a hora del pronóstico para un día específico,
-con temperatura, sensación térmica, viento, lluvia y más.
+Muestra el desglose hora a hora del pronóstico para varios días,
+con separadores visuales entre días y datos detallados por hora.
 """
 
 import logging
+from collections import OrderedDict
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Optional
@@ -23,6 +24,9 @@ from meteowatch.models.hourly import HourData, HourlyForecast
 
 logger = logging.getLogger(__name__)
 
+# Días de la semana en español
+WEEKDAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
 
 def _degrees_to_cardinal(degrees: int) -> str:
     """Convierte una dirección en grados (0-360) a punto cardinal."""
@@ -36,13 +40,15 @@ def _degrees_to_cardinal(degrees: int) -> str:
 class HourlyForecastPage(Adw.NavigationPage):
     """Página que muestra el pronóstico detallado por hora."""
 
-    def __init__(self, config: AppConfig, location_hash: str, day_start: int):
+    def __init__(self, config: AppConfig, location_hash: str, day_start: int,
+                 on_change_location=None):
         """Inicializa la página de detalle por hora.
 
         Args:
             config: Configuración de la aplicación.
             location_hash: No usado (mantenido por compatibilidad).
             day_start: Timestamp del inicio del día seleccionado.
+            on_change_location: Callback opcional para cambiar de ubicación.
         """
         super().__init__()
 
@@ -64,6 +70,7 @@ class HourlyForecastPage(Adw.NavigationPage):
         self._config = config
         self._timezone = tz
         self._day_start = day_start
+        self._on_change_location = on_change_location
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -74,6 +81,15 @@ class HourlyForecastPage(Adw.NavigationPage):
         # Header bar — el botón de retroceso lo provee automáticamente Adw.NavigationView
         header = Adw.HeaderBar()
         header.set_show_title(True)
+
+        # Botón de cambio de ubicación (si el callback está disponible)
+        if self._on_change_location is not None:
+            change_btn = Gtk.Button()
+            change_btn.set_icon_name("find-location-symbolic")
+            change_btn.set_tooltip_text("Cambiar ubicación")
+            change_btn.connect("clicked", lambda b: self._on_change_location())
+            header.pack_end(change_btn)
+
         toolbar_view.add_top_bar(header)
 
         # Contenido con scroll
@@ -138,7 +154,7 @@ class HourlyForecastPage(Adw.NavigationPage):
         thread.start()
 
     def _on_forecast_loaded(self, forecast: HourlyForecast) -> None:
-        """Muestra el pronóstico por hora cargado."""
+        """Muestra el pronóstico por hora cargado con separadores entre días."""
         logger.debug("Mostrando %d horas en UI", len(forecast.hours))
         self._spinner.stop()
         self._spinner.set_visible(False)
@@ -152,14 +168,23 @@ class HourlyForecastPage(Adw.NavigationPage):
             self._main_box.append(no_data)
             return
 
-        # Lista de horas
+        # Agrupar horas por día
+        hours_by_day = self._group_hours_by_day(forecast.hours)
+
+        # Lista de horas con separadores entre días
         hours_list = Gtk.ListBox()
         hours_list.add_css_class("boxed-list")
         hours_list.set_selection_mode(Gtk.SelectionMode.NONE)
 
-        for hour_data in forecast.hours:
-            row = self._build_hour_row(hour_data)
-            hours_list.append(row)
+        for day_start_ms, day_hours in hours_by_day.items():
+            # Separador visual del día
+            separator_row = self._build_day_separator_row(day_start_ms)
+            hours_list.append(separator_row)
+
+            # Horas de ese día
+            for hour_data in day_hours:
+                row = self._build_hour_row(hour_data)
+                hours_list.append(row)
 
         self._main_box.append(hours_list)
 
@@ -173,6 +198,81 @@ class HourlyForecastPage(Adw.NavigationPage):
             f"<b>Error al cargar el pronóstico por hora</b>\n\n{message}"
         )
         self._error_label.set_visible(True)
+
+    # ------------------------------------------------------------------
+    # Agrupación por día y separadores visuales
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _group_hours_by_day(hours: list[HourData]) -> OrderedDict:
+        """Agrupa las horas por día basándose en el timestamp 'end'.
+
+        Args:
+            hours: Lista de datos horarios del pronóstico.
+
+        Returns:
+            OrderedDict con clave = timestamp inicio del día (medianoche) en ms,
+            valor = lista de HourData de ese día, en orden cronológico.
+        """
+        grouped: OrderedDict = OrderedDict()
+        for h in hours:
+            dt = datetime.fromtimestamp(h.end / 1000, tz=timezone.utc)
+            # Truncar a medianoche del día en UTC
+            day_start = int(datetime(
+                dt.year, dt.month, dt.day, 0, 0, 0,
+                tzinfo=timezone.utc,
+            ).timestamp() * 1000)
+            if day_start not in grouped:
+                grouped[day_start] = []
+            grouped[day_start].append(h)
+        return grouped
+
+    def _build_day_separator_row(self, day_start_ms: int) -> Gtk.ListBoxRow:
+        """Construye una fila separadora que indica el inicio de un nuevo día.
+
+        Args:
+            day_start_ms: Timestamp de medianoche del día en ms.
+
+        Returns:
+            Gtk.ListBoxRow con el nombre del día y la fecha.
+        """
+        row = Gtk.ListBoxRow()
+        row.set_activatable(False)
+        row.add_css_class("day-separator")
+
+        dt = datetime.fromtimestamp(day_start_ms / 1000, tz=self._timezone)
+        now = datetime.now(tz=self._timezone)
+        today_start = int(datetime(
+            now.year, now.month, now.day, 0, 0, 0,
+            tzinfo=self._timezone,
+        ).timestamp() * 1000)
+
+        # Determinar etiqueta del día
+        delta_days = (day_start_ms - today_start) // 86400000
+        if delta_days == 0:
+            day_name = "Hoy"
+        elif delta_days == 1:
+            day_name = "Mañana"
+        else:
+            day_name = WEEKDAYS[dt.weekday()]
+
+        date_str = dt.strftime("%d de %B").lower()
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+        box.set_margin_top(10)
+        box.set_margin_bottom(6)
+
+        label = Gtk.Label()
+        label.set_markup(f"<b>{day_name}</b>  <small>{date_str}</small>")
+        label.set_halign(Gtk.Align.START)
+        label.set_xalign(0)
+        label.set_hexpand(True)
+        box.append(label)
+
+        row.set_child(box)
+        return row
 
     def _build_hour_row(self, hour_data: HourData) -> Gtk.ListBoxRow:
         """Construye una fila con los datos de una hora específica.

@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from meteowatch.api.client import OpenMeteoClient, OpenMeteoError, CurrentWeather
 from meteowatch.config import AppConfig
@@ -85,6 +85,17 @@ class DailyForecastPage(Adw.NavigationPage):
         refresh_btn.set_tooltip_text("Actualizar pronóstico")
         refresh_btn.connect("clicked", lambda b: self.load_forecast())
         header.pack_end(refresh_btn)
+
+        # Menú de opciones (Acerca de)
+        menu_btn = Gtk.MenuButton()
+        menu_btn.set_icon_name("open-menu-symbolic")
+        menu_btn.set_tooltip_text("Opciones")
+
+        menu_model = Gio.Menu()
+        menu_model.append("Acerca de Meteowatch", "app.about")
+        menu_btn.set_menu_model(menu_model)
+
+        header.pack_end(menu_btn)
 
         toolbar_view.add_top_bar(header)
 
@@ -239,7 +250,7 @@ class DailyForecastPage(Adw.NavigationPage):
 
             cur_temp_label = Gtk.Label()
             cur_temp_label.set_markup(
-                f"<span size='xx-large'><b>{current_temp:.0f}°</b></span>"
+                f"<span size='xx-large'><b>{current_temp:.0f}°C</b></span>"
             )
             current_box.append(cur_temp_label)
 
@@ -280,6 +291,23 @@ class DailyForecastPage(Adw.NavigationPage):
         for i, day in enumerate(forecast.days):
             card = self._build_day_card(day, i)
             self._main_box.append(card)
+
+        # --- Atribución a Open-Meteo (requerido por los términos de uso) ---
+        attribution_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        attribution_box.set_margin_top(16)
+        attribution_box.set_margin_bottom(8)
+
+        attribution_label = Gtk.Label()
+        attribution_label.set_markup(
+            "<small>Datos meteorológicos proporcionados por "
+            "<a href='https://open-meteo.com/'>Open-Meteo</a>"
+            "</small>"
+        )
+        attribution_label.set_halign(Gtk.Align.CENTER)
+        attribution_label.set_opacity(0.7)
+        attribution_box.append(attribution_label)
+
+        self._main_box.append(attribution_box)
 
     def _build_day_card(self, day, index: int) -> Gtk.Box:
         """Construye una tarjeta expandida con todos los detalles de un día.
@@ -350,12 +378,12 @@ class DailyForecastPage(Adw.NavigationPage):
         temp_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         temp_col.set_valign(Gtk.Align.CENTER)
         temp_max_lbl = Gtk.Label()
-        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.0f}°</b></big>")
+        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.0f}°C</b></big>")
         temp_max_lbl.set_halign(Gtk.Align.END)
         temp_max_lbl.set_xalign(1)
         temp_col.append(temp_max_lbl)
         temp_min_lbl = Gtk.Label()
-        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.0f}°</small>")
+        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.0f}°C</small>")
         temp_min_lbl.set_halign(Gtk.Align.END)
         temp_min_lbl.set_xalign(1)
         temp_col.append(temp_min_lbl)
