@@ -54,14 +54,15 @@ class TestGroupHoursByDay:
         )
 
     def test_groups_hours_by_midnight_utc(self):
-        """Verifica que las horas se agrupen por medianoche UTC."""
+        """Verifica que las horas se agrupen por medianoche UTC cuando el tz es UTC."""
+        tz = timezone.utc
         # Dos horas del mismo día UTC
         h1 = self._make_hour(int(datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc).timestamp() * 1000))
         h2 = self._make_hour(int(datetime(2026, 7, 24, 14, 0, tzinfo=timezone.utc).timestamp() * 1000))
         # Una hora del día siguiente
         h3 = self._make_hour(int(datetime(2026, 7, 25, 2, 0, tzinfo=timezone.utc).timestamp() * 1000))
 
-        grouped = HourlyForecastPage._group_hours_by_day([h1, h2, h3])
+        grouped = HourlyForecastPage._group_hours_by_day([h1, h2, h3], tz)
 
         assert len(grouped) == 2
         # Día 1 (24 jul)
@@ -74,18 +75,42 @@ class TestGroupHoursByDay:
         assert len(grouped[day2_key]) == 1
 
     def test_empty_list_returns_empty(self):
-        grouped = HourlyForecastPage._group_hours_by_day([])
+        grouped = HourlyForecastPage._group_hours_by_day([], timezone.utc)
         assert len(grouped) == 0
 
     def test_preserves_chronological_order(self):
         """Verifica que las horas dentro de cada grupo mantengan orden cronológico."""
+        tz = timezone.utc
         h1 = self._make_hour(int(datetime(2026, 7, 24, 8, 0, tzinfo=timezone.utc).timestamp() * 1000))
         h2 = self._make_hour(int(datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc).timestamp() * 1000))
         h3 = self._make_hour(int(datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc).timestamp() * 1000))
         # Las pasamos desordenadas; la agrupación mantiene el orden de entrada
-        grouped = HourlyForecastPage._group_hours_by_day([h1, h2, h3])
+        grouped = HourlyForecastPage._group_hours_by_day([h1, h2, h3], tz)
         day_key = list(grouped.keys())[0]
         assert len(grouped[day_key]) == 3
+
+    def test_groups_by_local_midnight_not_utc(self):
+        """Verifica que la agrupación respete la medianoche local, no UTC.
+
+        Con UTC-3, las 02:00 hora local del 25 de julio equivalen a las 05:00 UTC
+        del 25 de julio. Deben agruparse bajo la medianoche local del 25,
+        no bajo la medianoche UTC del 25.
+        """
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Argentina/Buenos_Aires")  # UTC-3
+
+        # 02:00 ART = 05:00 UTC — ambas del 25 de julio
+        h_art_0200 = self._make_hour(int(datetime(2026, 7, 25, 5, 0, tzinfo=timezone.utc).timestamp() * 1000))
+        # 14:00 ART = 17:00 UTC
+        h_art_1400 = self._make_hour(int(datetime(2026, 7, 25, 17, 0, tzinfo=timezone.utc).timestamp() * 1000))
+
+        grouped = HourlyForecastPage._group_hours_by_day([h_art_0200, h_art_1400], tz)
+
+        assert len(grouped) == 1
+        # La clave debe ser la medianoche local del 25 de julio
+        local_midnight = int(datetime(2026, 7, 25, 0, 0, 0, tzinfo=tz).timestamp() * 1000)
+        assert local_midnight in grouped
+        assert len(grouped[local_midnight]) == 2
 
 
 class TestFilterFutureHours:
