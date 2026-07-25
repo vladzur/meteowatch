@@ -205,7 +205,7 @@ class TestVersion:
     """Pruebas para la versión de la aplicación."""
 
     def test_version_is_1_3_0(self):
-        assert __version__ == "1.3.0"
+        assert __version__ == "1.3.1"
 
     def test_version_has_three_components(self):
         parts = __version__.split(".")
