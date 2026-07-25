@@ -56,6 +56,15 @@
   </screenshots>
 
   <releases>
+    <release version="1.2.1" date="2026-07-24">
+      <description>
+        <p>Corrección: humedad y sensación térmica en condiciones actuales.</p>
+        <ul>
+          <li>Se muestra la humedad relativa y sensación térmica en el encabezado de la vista diaria</li>
+          <li>Se elimina el placeholder de humedad del grid de pronóstico diario (no es una variable diaria de Open-Meteo)</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.0" date="2026-07-24">
       <description>
         <p>Filtro de horas futuras, menú reorganizado y diálogo de ayuda.</p>

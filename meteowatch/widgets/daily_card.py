@@ -186,8 +186,7 @@ class DailyForecastPage(Adw.NavigationPage):
                         logger.exception("Error al notificar actualización de clima al tray")
 
                 GLib.idle_add(
-                    self._on_forecast_loaded, forecast,
-                    current.temperature, current.symbol,
+                    self._on_forecast_loaded, forecast, current,
                 )
             except OpenMeteoError as e:
                 logger.exception("Error de API al cargar pronóstico diario")
@@ -201,7 +200,7 @@ class DailyForecastPage(Adw.NavigationPage):
         thread.start()
 
     def _on_forecast_loaded(self, forecast: DailyForecast,
-                            current_temp=None, current_symbol=None) -> None:
+                            current: Optional[CurrentWeather] = None) -> None:
         """Muestra el pronóstico diario cargado."""
         logger.debug("Mostrando pronóstico diario en UI: %s", self._config.location_name)
         self._spinner.stop()
@@ -209,7 +208,7 @@ class DailyForecastPage(Adw.NavigationPage):
         self._forecast = forecast
         self.set_title(self._config.location_name or "Meteowatch")
 
-        self._build_forecast_card(forecast, current_temp, current_symbol)
+        self._build_forecast_card(forecast, current)
 
     def _on_forecast_error(self, message: str) -> None:
         """Muestra un error al cargar el pronóstico."""
@@ -230,7 +229,7 @@ class DailyForecastPage(Adw.NavigationPage):
             self._on_day_selected(location_id, today.start)
 
     def _build_forecast_card(self, forecast: DailyForecast,
-                             current_temp=None, current_symbol=None) -> None:
+                             current: Optional[CurrentWeather] = None) -> None:
         """Construye las tarjetas de pronóstico para cada día."""
         if not forecast.days:
             no_data = Gtk.Label()
@@ -249,26 +248,50 @@ class DailyForecastPage(Adw.NavigationPage):
         location_label.set_halign(Gtk.Align.CENTER)
         header_box.append(location_label)
 
-        if current_temp is not None:
+        if current is not None:
             current_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             current_box.set_halign(Gtk.Align.CENTER)
 
-            if current_symbol is not None:
-                cur_symbol = get_weather_symbol(current_symbol)
-                cur_icon = Gtk.Label()
-                cur_icon.set_markup(f"<span size='large'>{cur_symbol.emoji}</span>")
-                current_box.append(cur_icon)
+            # Icono del tiempo actual
+            cur_symbol = get_weather_symbol(current.symbol)
+            cur_icon = Gtk.Label()
+            cur_icon.set_markup(f"<span size='large'>{cur_symbol.emoji}</span>")
+            current_box.append(cur_icon)
 
+            # Temperatura actual
             cur_temp_label = Gtk.Label()
             cur_temp_label.set_markup(
-                f"<span size='xx-large'><b>{current_temp:.0f}°C</b></span>"
+                f"<span size='xx-large'><b>{current.temperature:.0f}°C</b></span>"
             )
             current_box.append(cur_temp_label)
 
+            # Columna de detalles: sensación térmica, humedad y "Ahora"
+            details_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            details_col.set_valign(Gtk.Align.CENTER)
+
+            feels_label = Gtk.Label()
+            feels_label.set_markup(
+                f"<small>Sensación {current.feels_like:.0f}°C</small>"
+            )
+            feels_label.set_halign(Gtk.Align.START)
+            feels_label.set_xalign(0)
+            details_col.append(feels_label)
+
+            humidity_label = Gtk.Label()
+            humidity_label.set_markup(
+                f"<small>💧 {current.humidity}%</small>"
+            )
+            humidity_label.set_halign(Gtk.Align.START)
+            humidity_label.set_xalign(0)
+            details_col.append(humidity_label)
+
             cur_desc = Gtk.Label()
             cur_desc.set_markup("<small>Ahora</small>")
-            cur_desc.set_valign(Gtk.Align.END)
-            current_box.append(cur_desc)
+            cur_desc.set_halign(Gtk.Align.START)
+            cur_desc.set_xalign(0)
+            details_col.append(cur_desc)
+
+            current_box.append(details_col)
 
             header_box.append(current_box)
 
@@ -417,15 +440,14 @@ class DailyForecastPage(Adw.NavigationPage):
 
         wind_dir_str = _degrees_to_cardinal(day.wind_direction)
 
-        self._add_grid_cell(grid, "💧 Humedad", "—", 0, 0)
-        self._add_grid_cell(grid, "🌧️ Prob. lluvia", f"{day.rain_probability}%", 0, 1)
-        self._add_grid_cell(grid, "💨 Viento", f"{day.wind_speed} km/h {wind_dir_str}", 1, 0)
+        self._add_grid_cell(grid, "🌧️ Prob. lluvia", f"{day.rain_probability}%", 0, 0)
+        self._add_grid_cell(grid, "💨 Viento", f"{day.wind_speed} km/h {wind_dir_str}", 0, 1)
         gust_text = f"{day.wind_gust} km/h"
-        self._add_grid_cell(grid, "↗️ Ráfagas", gust_text, 1, 1, alert=gust_alert)
-        self._add_grid_cell(grid, "🌅 Amanecer", sun_in, 2, 0)
-        self._add_grid_cell(grid, "🌇 Atardecer", sun_out, 2, 1)
-        self._add_grid_cell(grid, "🌧️ Precipitación", f"{day.precipitation:.1f} mm", 3, 0)
-        self._add_grid_cell(grid, "☀️ Índice UV", f"{day.uv_index_max:.1f}", 3, 1)
+        self._add_grid_cell(grid, "↗️ Ráfagas", gust_text, 1, 0, alert=gust_alert)
+        self._add_grid_cell(grid, "🌅 Amanecer", sun_in, 1, 1)
+        self._add_grid_cell(grid, "🌇 Atardecer", sun_out, 2, 0)
+        self._add_grid_cell(grid, "🌧️ Precipitación", f"{day.precipitation:.1f} mm", 2, 1)
+        self._add_grid_cell(grid, "☀️ Índice UV", f"{day.uv_index_max:.1f}", 3, 0)
 
         card.append(grid)
         return card
