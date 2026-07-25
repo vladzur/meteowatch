@@ -130,18 +130,16 @@ class MeteowatchWindow(Adw.ApplicationWindow):
             self._start_periodic_refresh()
 
     def _show_hourly_forecast(self, location_hash: str, day_start: int) -> None:
-        """Muestra la página de pronóstico por hora para un día específico.
+        """Muestra la página de pronóstico por hora.
 
         Args:
             location_hash: Hash de la ubicación (no usado, mantenido por compatibilidad).
-            day_start: Timestamp del inicio del día.
+            day_start: Timestamp del inicio del día (no usado, mantenido por compatibilidad).
         """
-        logger.info("Navegando a: pronóstico por hora (start=%s)",
-                    day_start)
+        logger.info("Navegando a: pronóstico por hora")
         page = HourlyForecastPage(
             config=self._config,
             location_hash=location_hash,
-            day_start=day_start,
             on_change_location=self._on_change_location,
         )
         self._navigation.push(page)

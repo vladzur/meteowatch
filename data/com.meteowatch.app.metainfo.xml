@@ -56,6 +56,19 @@
   </screenshots>
 
   <releases>
+    <release version="1.2.0" date="2026-07-24">
+      <description>
+        <p>Filtro de horas futuras, menú reorganizado y diálogo de ayuda.</p>
+        <ul>
+          <li>El pronóstico por hora ahora muestra solo las horas a partir del segmento más cercano a la hora actual</li>
+          <li>Botón toggle para mostrar/ocultar horas ya transcurridas</li>
+          <li>Menú de opciones movido a la izquierda de la barra superior, antes del nombre de la ubicación</li>
+          <li>Nueva opción "Salir" en el menú para cerrar definitivamente la aplicación</li>
+          <li>Diálogo de ayuda con instrucciones de configuración, uso y bandeja del sistema</li>
+          <li>Corrección de versiones en metadatos</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-07-24">
       <description>
         <p>Migración del origen de datos de MeteoRed a Open-Meteo y mejoras de usabilidad.</p>

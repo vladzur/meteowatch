@@ -40,19 +40,17 @@ def _degrees_to_cardinal(degrees: int) -> str:
 class HourlyForecastPage(Adw.NavigationPage):
     """Página que muestra el pronóstico detallado por hora."""
 
-    def __init__(self, config: AppConfig, location_hash: str, day_start: int,
+    def __init__(self, config: AppConfig, location_hash: str,
                  on_change_location=None):
         """Inicializa la página de detalle por hora.
 
         Args:
             config: Configuración de la aplicación.
             location_hash: No usado (mantenido por compatibilidad).
-            day_start: Timestamp del inicio del día seleccionado.
             on_change_location: Callback opcional para cambiar de ubicación.
         """
         super().__init__()
-
-        logger.info("Creando página de pronóstico por hora: day_start=%s", day_start)
+        self.set_title("Pronóstico por hora")
 
         # Obtener la zona horaria desde la configuración
         try:
@@ -60,17 +58,16 @@ class HourlyForecastPage(Adw.NavigationPage):
         except Exception:
             tz = ZoneInfo("UTC")
 
-        # Formatear la fecha del día como título
-        dt = datetime.fromtimestamp(day_start / 1000, tz=tz)
-        date_str = dt.strftime("%A %d de %B")
-        # Capitalizar primera letra
-        date_str = date_str[0].upper() + date_str[1:]
-        self.set_title(date_str)
-
         self._config = config
         self._timezone = tz
-        self._day_start = day_start
         self._on_change_location = on_change_location
+
+        # Estado interno para el filtro de horas pasadas
+        self._all_hours: list[HourData] = []
+        self._future_hours: list[HourData] = []
+        self._hours_list: Gtk.ListBox | None = None
+        self._toggle_btn: Gtk.ToggleButton | None = None
+
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -154,7 +151,7 @@ class HourlyForecastPage(Adw.NavigationPage):
         thread.start()
 
     def _on_forecast_loaded(self, forecast: HourlyForecast) -> None:
-        """Muestra el pronóstico por hora cargado con separadores entre días."""
+        """Muestra el pronóstico por hora cargado, filtrando horas pasadas."""
         logger.debug("Mostrando %d horas en UI", len(forecast.hours))
         self._spinner.stop()
         self._spinner.set_visible(False)
@@ -168,25 +165,80 @@ class HourlyForecastPage(Adw.NavigationPage):
             self._main_box.append(no_data)
             return
 
-        # Agrupar horas por día
-        hours_by_day = self._group_hours_by_day(forecast.hours)
+        # Calcular timestamp actual en ms
+        now_ms = int(datetime.now(tz=self._timezone).timestamp() * 1000)
 
-        # Lista de horas con separadores entre días
-        hours_list = Gtk.ListBox()
-        hours_list.add_css_class("boxed-list")
-        hours_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        # Guardar todas las horas y filtrar solo las futuras
+        self._all_hours = forecast.hours
+        self._future_hours = [h for h in forecast.hours if h.end >= now_ms]
+
+        if not self._future_hours:
+            logger.warning("Todas las horas del pronóstico ya pasaron")
+            no_data = Gtk.Label()
+            no_data.set_text("No hay más horas de pronóstico disponibles.")
+            no_data.set_halign(Gtk.Align.CENTER)
+            no_data.set_margin_top(40)
+            self._main_box.append(no_data)
+            return
+
+        # Determinar si hay horas pasadas para mostrar el toggle
+        has_past_hours = len(self._future_hours) < len(self._all_hours)
+
+        if has_past_hours:
+            self._toggle_btn = Gtk.ToggleButton()
+            self._toggle_btn.set_label("⏮️ Mostrar horas anteriores")
+            self._toggle_btn.set_halign(Gtk.Align.CENTER)
+            self._toggle_btn.set_margin_bottom(4)
+            self._toggle_btn.connect("toggled", self._on_toggle_past_hours)
+            self._main_box.append(self._toggle_btn)
+
+        # Construir la lista inicial solo con horas futuras
+        self._hours_list = self._build_hours_list_widget(self._future_hours)
+        self._main_box.append(self._hours_list)
+
+    def _on_toggle_past_hours(self, button: Gtk.ToggleButton) -> None:
+        """Alterna entre mostrar solo horas futuras o todas las horas."""
+        if self._hours_list is None:
+            return
+
+        # Remover la lista actual del contenedor
+        self._main_box.remove(self._hours_list)
+
+        if button.get_active():
+            button.set_label("⏮️ Ocultar horas anteriores")
+            self._hours_list = self._build_hours_list_widget(self._all_hours)
+        else:
+            button.set_label("⏮️ Mostrar horas anteriores")
+            self._hours_list = self._build_hours_list_widget(self._future_hours)
+
+        self._main_box.append(self._hours_list)
+
+    def _build_hours_list_widget(self, hours: list[HourData]) -> Gtk.ListBox:
+        """Construye un Gtk.ListBox con las horas agrupadas por día.
+
+        Args:
+            hours: Lista de datos horarios a mostrar.
+
+        Returns:
+            Gtk.ListBox con separadores de día y filas de horas.
+        """
+        hours_by_day = self._group_hours_by_day(hours)
+
+        list_box = Gtk.ListBox()
+        list_box.add_css_class("boxed-list")
+        list_box.set_selection_mode(Gtk.SelectionMode.NONE)
 
         for day_start_ms, day_hours in hours_by_day.items():
             # Separador visual del día
             separator_row = self._build_day_separator_row(day_start_ms)
-            hours_list.append(separator_row)
+            list_box.append(separator_row)
 
             # Horas de ese día
             for hour_data in day_hours:
                 row = self._build_hour_row(hour_data)
-                hours_list.append(row)
+                list_box.append(row)
 
-        self._main_box.append(hours_list)
+        return list_box
 
     def _on_forecast_error(self, message: str) -> None:
         """Muestra un error al cargar el pronóstico."""
