@@ -24,6 +24,7 @@
       <li>Icono en bandeja del sistema con temperatura actual</li>
       <li>Códigos meteorológicos WMO oficiales (cobertura completa)</li>
       <li>Alertas de ráfagas de viento ≥ 50 km/h</li>
+      <li>Motor de alertas climáticas con notificaciones de escritorio (tormentas, lluvia helada, viento, temperaturas extremas)</li>
       <li>Datos de amanecer, atardecer, precipitación e índice UV</li>
       <li>Atribución a Open-Meteo y diálogo "Acerca de"</li>
       <li>Cambio de ubicación accesible desde cualquier pantalla</li>
@@ -56,6 +57,18 @@
   </screenshots>
 
   <releases>
+    <release version="1.3.0" date="2026-07-25">
+      <description>
+        <p>Motor de alertas climáticas y notificaciones de escritorio.</p>
+        <ul>
+          <li>Nuevo módulo de alertas: evalúa códigos WMO y umbrales numéricos (viento, lluvia, temperatura)</li>
+          <li>Notificaciones de escritorio nativas vía D-Bus para condiciones peligrosas</li>
+          <li>Banner visual de alertas en la vista de pronóstico diario</li>
+          <li>Deduplicación de alertas: no repite la misma alerta en 3 horas</li>
+          <li>Flag --test-alert para probar notificaciones</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.1" date="2026-07-24">
       <description>
         <p>Corrección: humedad y sensación térmica en condiciones actuales.</p>
