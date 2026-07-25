@@ -15,6 +15,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
+from meteowatch.alerts import AlertEngine, send_alerts
 from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
@@ -42,6 +43,9 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
         # Flag para distinguir cierre real vs minimizar al tray
         self.force_quit: bool = False
+
+        # Motor de alertas climáticas (persiste estado de deduplicación)
+        self._alert_engine = AlertEngine()
 
         # Temporizador de actualización periódica del icono del tray
         self._refresh_timer_id: int = 0
@@ -216,10 +220,10 @@ class MeteowatchWindow(Adw.ApplicationWindow):
             logger.debug("Refresco periódico del tray detenido")
 
     def _on_periodic_refresh(self) -> bool:
-        """Callback del temporizador: actualiza el icono del tray.
+        """Callback del temporizador: actualiza el icono del tray y evalúa alertas.
 
-        Consulta el endpoint horario de la API en un hilo secundario
-        y actualiza el icono con la temperatura y símbolo actuales.
+        Consulta el pronóstico completo en un hilo secundario,
+        actualiza el icono del tray y evalúa alertas climáticas.
 
         Returns:
             True para mantener el temporizador activo (GLib.timeout_add).
@@ -230,14 +234,24 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
         logger.debug("Iniciando refresco periódico del tray...")
 
+        # Programar el refresco en hilo secundario
+        keep_running = True
+        self._start_refresh_thread()
+        return keep_running
+
+    def _start_refresh_thread(self) -> None:
+        """Lanza un hilo secundario para consultar la API y evaluar alertas."""
+        import threading
+
         def do_refresh():
             try:
                 client = OpenMeteoClient()
-                current = client.get_current_weather(
+                result = client.get_forecast(
                     self._config.latitude,
                     self._config.longitude,
                     self._config.timezone,
                 )
+                current = result.current
                 symbol = get_weather_symbol(current.symbol)
                 GLib.idle_add(
                     self._on_weather_updated,
@@ -248,6 +262,19 @@ class MeteowatchWindow(Adw.ApplicationWindow):
                     "Tray actualizado (periódico): %s %.1f°C",
                         symbol.emoji, current.temperature,
                     )
+
+                # Evaluar alertas climáticas con los datos completos del forecast
+                alerts = self._alert_engine.evaluate(
+                    result.daily, result.hourly,
+                )
+                if alerts:
+                    app = self.get_application()
+                    if app is not None:
+                        GLib.idle_add(send_alerts, alerts)
+                    logger.info(
+                        "Alertas enviadas en refresco periódico: %d",
+                        len(alerts),
+                    )
             except OpenMeteoError as e:
                 logger.warning("Error de API en refresco periódico: %s", e)
             except Exception:
@@ -255,6 +282,3 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
         thread = threading.Thread(target=do_refresh, daemon=True)
         thread.start()
-
-        # Retornar True para que GLib mantenga el temporizador
-        return True

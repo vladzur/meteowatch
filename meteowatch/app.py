@@ -14,6 +14,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from meteowatch.alerts import Alert, send_alerts
 from meteowatch.config import AppConfig
 from meteowatch.window import MeteowatchWindow
 
@@ -32,6 +33,7 @@ class MeteowatchApp(Adw.Application):
         self._config = AppConfig.load()
         self._window: "MeteowatchWindow | None" = None
         self._enable_tray: bool = True
+        self._test_alert: str | None = None  # Nivel de alerta de prueba
 
         # Registrar flags de línea de comandos
         self.add_main_option(
@@ -46,6 +48,13 @@ class MeteowatchApp(Adw.Application):
             GLib.OptionFlags.NONE,
             GLib.OptionArg.NONE,
             "Desactivar el icono de bandeja del sistema",
+            None,
+        )
+        self.add_main_option(
+            "test-alert", 0,
+            GLib.OptionFlags.NONE,
+            GLib.OptionArg.STRING,
+            "Enviar una notificación de prueba (yellow, orange o all)",
             None,
         )
 
@@ -78,8 +87,20 @@ class MeteowatchApp(Adw.Application):
             self._enable_tray = False
             logger.info("Flag --no-tray detectado: bandeja desactivada")
 
+        # Procesar --test-alert: guardar nivel para enviar tras activar
+        if options.contains("test-alert"):
+            self._test_alert = options.lookup_value("test-alert",
+                                                      GLib.VariantType("s"))
+            if self._test_alert is not None:
+                self._test_alert = self._test_alert.unpack()
+            logger.info("Flag --test-alert detectado: nivel=%s", self._test_alert)
+
         # Activar la aplicación normalmente (crea la ventana)
         self.activate()
+
+        # Si se pidió --test-alert, enviar notificaciones de prueba
+        if self._test_alert is not None:
+            GLib.idle_add(self._send_test_alerts, self._test_alert)
 
         # Si se pasó --background y el tray está activo, ocultar al tray
         if options.contains("background") and self._enable_tray:
@@ -110,6 +131,55 @@ class MeteowatchApp(Adw.Application):
 
         # Cargar estilos CSS personalizados
         self._load_css()
+
+    # ------------------------------------------------------------------
+    # Alerta de prueba
+    # ------------------------------------------------------------------
+
+    def _send_test_alerts(self, level: str) -> None:
+        """Envía notificaciones de prueba para verificar el sistema.
+
+        Args:
+            level: 'yellow', 'orange' o 'all'.
+        """
+        alerts: list[Alert] = []
+
+        if level in ("yellow", "all"):
+            alerts.append(Alert(
+                level="yellow",
+                category="test",
+                message=(
+                    "⚠️ Esta es una alerta amarilla de prueba. "
+                    "El sistema de notificaciones de Meteowatch funciona correctamente."
+                ),
+                source_code=None,
+                value=None,
+            ))
+
+        if level in ("orange", "all"):
+            alerts.append(Alert(
+                level="orange",
+                category="test",
+                message=(
+                    "🔴 Esta es una alerta naranja de prueba. "
+                    "El sistema de notificaciones de Meteowatch funciona correctamente."
+                ),
+                source_code=None,
+                value=None,
+            ))
+
+        if not alerts:
+            alerts.append(Alert(
+                level="yellow",
+                category="test",
+                message="Notificación de prueba de Meteowatch.",
+                source_code=None,
+                value=None,
+            ))
+
+        logger.info("Enviando %d notificaciones de prueba (nivel=%s)...", len(alerts), level)
+        send_alerts(alerts)
+        logger.info("Notificaciones de prueba enviadas.")
 
     def do_shutdown(self) -> None:
         """Limpia recursos al cerrar la aplicación."""
