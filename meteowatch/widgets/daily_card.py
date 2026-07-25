@@ -17,9 +17,12 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from meteowatch.api.client import OpenMeteoClient, OpenMeteoError, CurrentWeather
+from meteowatch.alerts import AlertEngine
+from meteowatch.alerts.rules import Alert
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
 from meteowatch.models.daily import DailyForecast
+from meteowatch.models.hourly import HourlyForecast
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,7 @@ class DailyForecastPage(Adw.NavigationPage):
     """Página que muestra el pronóstico diario para la ubicación seleccionada."""
 
     def __init__(self, config: AppConfig, on_day_selected, on_change_location,
-                 on_weather_updated=None):
+                 on_weather_updated=None, on_alerts_detected=None):
         """Inicializa la página de pronóstico diario.
 
         Args:
@@ -55,6 +58,7 @@ class DailyForecastPage(Adw.NavigationPage):
             on_day_selected: Callback(location_hash, day_start_timestamp) al hacer clic en un día.
             on_change_location: Callback() para volver a la pantalla de búsqueda.
             on_weather_updated: Callback(symbol_emoji, temperature) al actualizar el clima.
+            on_alerts_detected: Callback(alerts) al detectar alertas en el forecast.
         """
         super().__init__()
         self.set_title(config.location_name or "Meteowatch")
@@ -62,7 +66,11 @@ class DailyForecastPage(Adw.NavigationPage):
         self._on_day_selected = on_day_selected
         self._on_change_location = on_change_location
         self._on_weather_updated = on_weather_updated
+        self._on_alerts_detected = on_alerts_detected
         self._forecast: Optional[DailyForecast] = None
+        self._alert_engine = AlertEngine()
+        self._alert_banner: Optional[Gtk.Revealer] = None
+        self._alert_banner_label: Optional[Gtk.Label] = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -126,6 +134,23 @@ class DailyForecastPage(Adw.NavigationPage):
         self._main_box.set_margin_bottom(16)
         scrolled.set_child(self._main_box)
 
+        # --- Banner de alertas (Revealer oculto por defecto) ---
+        self._alert_banner_label = Gtk.Label()
+        self._alert_banner_label.set_wrap(True)
+        self._alert_banner_label.set_xalign(0)
+        self._alert_banner_label.set_margin_start(12)
+        self._alert_banner_label.set_margin_end(12)
+        self._alert_banner_label.set_margin_top(10)
+        self._alert_banner_label.set_margin_bottom(10)
+        self._alert_banner_label.add_css_class("error")
+
+        self._alert_banner = Gtk.Revealer()
+        self._alert_banner.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self._alert_banner.set_transition_duration(300)
+        self._alert_banner.set_reveal_child(False)
+        self._alert_banner.set_child(self._alert_banner_label)
+        self._main_box.prepend(self._alert_banner)
+
         # Spinner de carga
         self._spinner = Gtk.Spinner()
         self._spinner.set_halign(Gtk.Align.CENTER)
@@ -150,58 +175,70 @@ class DailyForecastPage(Adw.NavigationPage):
         self._spinner.start()
         self._error_label.set_visible(False)
 
-        # Limpiar widgets de forecast anteriores (todo excepto spinner y error_label)
+        # Limpiar widgets de forecast anteriores (excepto spinner, error y banner)
         children_to_remove = []
         for child in self._main_box:
-            if child is not self._spinner and child is not self._error_label:
+            if (child is not self._spinner
+                    and child is not self._error_label
+                    and child is not self._alert_banner):
                 children_to_remove.append(child)
 
         for child in children_to_remove:
             self._main_box.remove(child)
 
-        def do_load():
-            try:
-                client = OpenMeteoClient()
-                result = client.get_forecast(
-                    self._config.latitude,
-                    self._config.longitude,
-                    self._config.timezone,
-                )
-                forecast = result.daily
-                current = result.current
-                logger.info("Pronóstico diario cargado: %d días", len(forecast.days))
-                logger.info(
-                    "Condiciones actuales: %.1f°C (symbol=%s)",
-                    current.temperature, current.symbol,
-                )
-
-                # Notificar al tray (vía callback de la ventana) los datos del clima
-                if self._on_weather_updated:
-                    try:
-                        weather_symbol = get_weather_symbol(current.symbol)
-                        self._on_weather_updated(
-                            weather_symbol.emoji, current.temperature
-                        )
-                    except Exception:
-                        logger.exception("Error al notificar actualización de clima al tray")
-
-                GLib.idle_add(
-                    self._on_forecast_loaded, forecast, current,
-                )
-            except OpenMeteoError as e:
-                logger.exception("Error de API al cargar pronóstico diario")
-                GLib.idle_add(self._on_forecast_error, str(e))
-            except Exception:
-                logger.exception("Error inesperado al cargar pronóstico diario")
-                GLib.idle_add(self._on_forecast_error, "Error inesperado. Revisa los logs para más detalles.")
-
         import threading
-        thread = threading.Thread(target=do_load, daemon=True)
+        thread = threading.Thread(target=self._fetch_forecast_thread, daemon=True)
         thread.start()
 
+    def _fetch_forecast_thread(self) -> None:
+        """Hilo secundario: consulta la API y evalúa alertas."""
+        try:
+            client = OpenMeteoClient()
+            result = client.get_forecast(
+                self._config.latitude,
+                self._config.longitude,
+                self._config.timezone,
+            )
+            forecast = result.daily
+            current = result.current
+            hourly = result.hourly
+            logger.info("Pronóstico diario cargado: %d días", len(forecast.days))
+            logger.info(
+                "Condiciones actuales: %.1f°C (symbol=%s)",
+                current.temperature, current.symbol,
+            )
+
+            # Evaluar alertas climáticas
+            alerts = self._alert_engine.evaluate(forecast, hourly)
+            if alerts:
+                logger.info(
+                    "Alertas detectadas en carga inicial: %d", len(alerts)
+                )
+
+            # Notificar al tray (vía callback de la ventana) los datos del clima
+            if self._on_weather_updated:
+                try:
+                    weather_symbol = get_weather_symbol(current.symbol)
+                    self._on_weather_updated(
+                        weather_symbol.emoji, current.temperature
+                    )
+                except Exception:
+                    logger.exception("Error al notificar actualización de clima al tray")
+
+            GLib.idle_add(
+                self._on_forecast_loaded, forecast, current, alerts,
+            )
+        except OpenMeteoError as e:
+            logger.exception("Error de API al cargar pronóstico diario")
+            GLib.idle_add(self._on_forecast_error, str(e))
+        except Exception:
+            logger.exception("Error inesperado al cargar pronóstico diario")
+            GLib.idle_add(self._on_forecast_error, "Error inesperado. Revisa los logs para más detalles.")
+
     def _on_forecast_loaded(self, forecast: DailyForecast,
-                            current: Optional[CurrentWeather] = None) -> None:
-        """Muestra el pronóstico diario cargado."""
+                            current: Optional[CurrentWeather] = None,
+                            alerts: Optional[list[Alert]] = None) -> None:
+        """Muestra el pronóstico diario cargado y las alertas detectadas."""
         logger.debug("Mostrando pronóstico diario en UI: %s", self._config.location_name)
         self._spinner.stop()
         self._spinner.set_visible(False)
@@ -209,6 +246,10 @@ class DailyForecastPage(Adw.NavigationPage):
         self.set_title(self._config.location_name or "Meteowatch")
 
         self._build_forecast_card(forecast, current)
+
+        # Mostrar banner de alertas si hay alertas activas
+        if alerts:
+            self.set_alerts(alerts)
 
     def _on_forecast_error(self, message: str) -> None:
         """Muestra un error al cargar el pronóstico."""
@@ -477,3 +518,38 @@ class DailyForecastPage(Adw.NavigationPage):
         cell.append(value)
 
         grid.attach(cell, col, row, 1, 1)
+
+    def set_alerts(self, alerts: list[Alert]) -> None:
+        """Muestra u oculta el banner de alertas en la página de pronóstico.
+
+        Args:
+            alerts: Lista de alertas activas. Lista vacía para ocultar el banner.
+        """
+        if self._alert_banner is None or self._alert_banner_label is None:
+            return
+
+        if not alerts:
+            self._alert_banner.set_reveal_child(False)
+            return
+
+        # Contar alertas por nivel
+        orange_count = sum(1 for a in alerts if a.level == "orange")
+        yellow_count = sum(1 for a in alerts if a.level == "yellow")
+
+        # Construir mensaje del banner
+        parts: list[str] = []
+        if orange_count > 0:
+            parts.append(f"🔴 {orange_count} alerta{'s' if orange_count > 1 else ''} naranja")
+        if yellow_count > 0:
+            parts.append(f"⚠️ {yellow_count} alerta{'s' if yellow_count > 1 else ''} amarilla")
+
+        title = " · ".join(parts)
+
+        # Agregar primer mensaje de alerta como detalle
+        detail = alerts[0].message
+
+        self._alert_banner_label.set_markup(
+            f"<b>{title}</b>\n<small>{detail}</small>"
+        )
+        self._alert_banner.set_reveal_child(True)
+        logger.debug("Banner de alertas mostrado: %s", title)
