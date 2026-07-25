@@ -133,6 +133,11 @@ class MeteowatchApp(Adw.Application):
         about_action.connect("activate", self._on_about_action)
         self.add_action(about_action)
 
+        # Acción "Ayuda"
+        help_action = Gio.SimpleAction.new("help", None)
+        help_action.connect("activate", self._on_help_action)
+        self.add_action(help_action)
+
     def _on_quit_action(self, action, param) -> None:
         """Acción 'quit': fuerza el cierre real de la aplicación.
 
@@ -154,7 +159,7 @@ class MeteowatchApp(Adw.Application):
         dialog = Adw.AboutDialog()
         dialog.set_application_name("Meteowatch")
         dialog.set_application_icon("com.meteowatch.app")
-        dialog.set_version("1.0.0")
+        dialog.set_version("1.2.0")
         dialog.set_developer_name("vladzur")
         dialog.set_website("https://github.com/vladzur/meteowatch")
         dialog.set_copyright("© 2026 vladzur")
@@ -165,6 +170,108 @@ class MeteowatchApp(Adw.Application):
         dialog.set_developers(["vladzur"])
         dialog.set_designers(["vladzur"])
 
+        dialog.present(self._window)
+
+    def _on_help_action(self, action, param) -> None:
+        """Acción 'help': muestra el diálogo de ayuda con instrucciones de uso."""
+        logger.info("Mostrando diálogo de ayuda")
+
+        dialog = Adw.Dialog()
+        dialog.set_title("Ayuda de Meteowatch")
+        dialog.set_content_width(420)
+        dialog.set_content_height(440)
+
+        # Toolbar con botón de cierre
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_show_title(False)
+        toolbar.add_top_bar(header)
+
+        close_btn = Gtk.Button()
+        close_btn.set_icon_name("window-close-symbolic")
+        close_btn.set_tooltip_text("Cerrar")
+        close_btn.connect("clicked", lambda b: dialog.close())
+        header.pack_end(close_btn)
+
+        # Contenido con scroll
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        toolbar.set_content(scrolled)
+
+        content = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=16,
+        )
+        content.set_margin_start(16)
+        content.set_margin_end(16)
+        content.set_margin_top(16)
+        content.set_margin_bottom(16)
+        scrolled.set_child(content)
+
+        # Secciones de ayuda
+        sections = [
+            (
+                "Configuración inicial",
+                "Al abrir Meteowatch por primera vez, se te pedirá que busques "
+                "y selecciones una ciudad. Escribe el nombre de tu ciudad en el "
+                "campo de búsqueda y selecciona la ubicación correcta de la lista. "
+                "Puedes cambiar la ubicación en cualquier momento con el botón 📍 "
+                "en la barra superior.",
+            ),
+            (
+                "Pronóstico diario",
+                "La pantalla principal muestra el pronóstico de los próximos 7 días "
+                "con temperaturas máximas y mínimas, probabilidad de lluvia, "
+                "velocidad del viento y más. Haz clic en el botón "
+                "\"Próximas 24 horas\" o en cualquier día para ver el desglose "
+                "hora por hora.",
+            ),
+            (
+                "Pronóstico por hora",
+                "Muestra el pronóstico detallado hora a hora a partir de la hora "
+                "actual. Si hay horas ya transcurridas, aparecerá un botón "
+                "\"Mostrar horas anteriores\" para consultarlas. "
+                "Las ráfagas de viento ≥ 50 km/h se destacan con ⚠️.",
+            ),
+            (
+                "Bandeja del sistema",
+                "Al cerrar la ventana (✕), Meteowatch se minimiza a la bandeja "
+                "del sistema y sigue ejecutándose en segundo plano. "
+                "Haz clic en el icono de la bandeja para restaurar la ventana. "
+                "El icono muestra la temperatura actual.",
+            ),
+            (
+                "Cómo salir de la aplicación",
+                "Hay tres formas de cerrar Meteowatch definitivamente:\n"
+                "  • Menú ☰ → Salir\n"
+                "  • Atajo de teclado Ctrl+Q\n"
+                "  • Clic central (rueda del ratón) sobre el icono de la bandeja",
+            ),
+        ]
+
+        for title, text in sections:
+            section_box = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL,
+                spacing=6,
+            )
+
+            title_label = Gtk.Label()
+            title_label.set_markup(f"<b>{title}</b>")
+            title_label.set_halign(Gtk.Align.START)
+            title_label.set_wrap(True)
+            title_label.set_xalign(0)
+            section_box.append(title_label)
+
+            text_label = Gtk.Label()
+            text_label.set_text(text)
+            text_label.set_halign(Gtk.Align.START)
+            text_label.set_wrap(True)
+            text_label.set_xalign(0)
+            section_box.append(text_label)
+
+            content.append(section_box)
+
+        dialog.set_child(toolbar)
         dialog.present(self._window)
 
     def _load_css(self) -> None:

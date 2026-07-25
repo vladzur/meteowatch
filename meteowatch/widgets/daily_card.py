@@ -86,16 +86,27 @@ class DailyForecastPage(Adw.NavigationPage):
         refresh_btn.connect("clicked", lambda b: self.load_forecast())
         header.pack_end(refresh_btn)
 
-        # Menú de opciones (Acerca de)
+        # Menú de opciones (izquierda, antes del nombre de la ubicación)
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
         menu_btn.set_tooltip_text("Opciones")
 
         menu_model = Gio.Menu()
-        menu_model.append("Acerca de Meteowatch", "app.about")
+
+        # Sección: ayuda e información
+        info_section = Gio.Menu()
+        info_section.append("Ayuda", "app.help")
+        info_section.append("Acerca de Meteowatch", "app.about")
+        menu_model.append_section(None, info_section)
+
+        # Sección: salir
+        quit_section = Gio.Menu()
+        quit_section.append("Salir", "app.quit")
+        menu_model.append_section(None, quit_section)
+
         menu_btn.set_menu_model(menu_model)
 
-        header.pack_end(menu_btn)
+        header.pack_start(menu_btn)
 
         toolbar_view.add_top_bar(header)
 
