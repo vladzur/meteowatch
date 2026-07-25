@@ -6,7 +6,7 @@ con separadores visuales entre días y datos detallados por hora.
 
 import logging
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional
 
@@ -222,7 +222,7 @@ class HourlyForecastPage(Adw.NavigationPage):
         Returns:
             Gtk.ListBox con separadores de día y filas de horas.
         """
-        hours_by_day = self._group_hours_by_day(hours)
+        hours_by_day = self._group_hours_by_day(hours, self._timezone)
 
         list_box = Gtk.ListBox()
         list_box.add_css_class("boxed-list")
@@ -256,23 +256,24 @@ class HourlyForecastPage(Adw.NavigationPage):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _group_hours_by_day(hours: list[HourData]) -> OrderedDict:
+    def _group_hours_by_day(hours: list[HourData], tz: ZoneInfo) -> OrderedDict:
         """Agrupa las horas por día basándose en el timestamp 'end'.
 
         Args:
             hours: Lista de datos horarios del pronóstico.
+            tz: Zona horaria local para la agrupación por día.
 
         Returns:
-            OrderedDict con clave = timestamp inicio del día (medianoche) en ms,
+            OrderedDict con clave = timestamp inicio del día (medianoche local) en ms,
             valor = lista de HourData de ese día, en orden cronológico.
         """
         grouped: OrderedDict = OrderedDict()
         for h in hours:
-            dt = datetime.fromtimestamp(h.end / 1000, tz=timezone.utc)
-            # Truncar a medianoche del día en UTC
+            dt = datetime.fromtimestamp(h.end / 1000, tz=tz)
+            # Truncar a medianoche del día en la zona horaria local
             day_start = int(datetime(
                 dt.year, dt.month, dt.day, 0, 0, 0,
-                tzinfo=timezone.utc,
+                tzinfo=tz,
             ).timestamp() * 1000)
             if day_start not in grouped:
                 grouped[day_start] = []

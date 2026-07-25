@@ -60,20 +60,20 @@ def generate_tray_png(symbol_emoji: str, temperature: float | None,
     y_center = ICON_HEIGHT // 2
 
     if temperature is None:
-        _draw_text(ctx, layout, symbol_emoji, "Sans 14",
+        _draw_text(ctx, layout, symbol_emoji, "Sans 11",
                    ICON_WIDTH // 2, y_center,
                    centered=True, shadow=False)
     else:
         temp_text = f"{temperature:.0f}°"
 
         # Emoji a la izquierda
-        _draw_text(ctx, layout, symbol_emoji, "Sans 13",
-                   8, y_center,
+        _draw_text(ctx, layout, symbol_emoji, "Sans 11",
+                   3, y_center,
                    centered=False, shadow=False)
 
         # Temperatura a la derecha, blanca con sombra
         _draw_text(ctx, layout, temp_text, "Sans Bold 11",
-                   33, y_center,
+                   26, y_center,
                    centered=False, shadow=True)
 
     surface.write_to_png(path)

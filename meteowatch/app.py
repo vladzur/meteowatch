@@ -229,7 +229,7 @@ class MeteowatchApp(Adw.Application):
         dialog = Adw.AboutDialog()
         dialog.set_application_name("Meteowatch")
         dialog.set_application_icon("com.meteowatch.app")
-        dialog.set_version("1.3.0")
+        dialog.set_version("1.3.1")
         dialog.set_developer_name("vladzur")
         dialog.set_website("https://github.com/vladzur/meteowatch")
         dialog.set_copyright("© 2026 vladzur")

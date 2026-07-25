@@ -57,6 +57,15 @@
   </screenshots>
 
   <releases>
+    <release version="1.3.1" date="2026-07-25">
+      <description>
+        <p>Corrección en widget por hora y mejora en icono de bandeja.</p>
+        <ul>
+          <li>Corregido el encabezado de día en el pronóstico por hora: ahora la agrupación respeta la zona horaria local en lugar de UTC</li>
+          <li>Icono del system tray mejorado: generación de PNG con Cairo/Pango para evitar problemas de renderizado de emojis y colores en distintos paneles</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.0" date="2026-07-25">
       <description>
         <p>Motor de alertas climáticas y notificaciones de escritorio.</p>
