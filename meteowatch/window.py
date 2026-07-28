@@ -2,11 +2,13 @@
 
 Contiene el Adw.NavigationView que orquesta la navegación entre
 las páginas de configuración, pronóstico diario y detalle por hora.
+
+Actúa como ForecastObserver del ForecastService para coordinar
+la actualización del icono del tray y la evaluación de alertas
+en cada refresco de datos.
 """
 
 import logging
-import threading
-import time
 
 import gi
 
@@ -16,9 +18,10 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from meteowatch.alerts import AlertEngine, send_alerts
-from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
+from meteowatch.api.client import CurrentWeather, ForecastResult
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
+from meteowatch.services.forecast import BaseForecastObserver, ForecastService
 from meteowatch.status_notifier import StatusNotifierItem
 from meteowatch.widgets.daily_card import DailyForecastPage
 from meteowatch.widgets.hourly_panel import HourlyForecastPage
@@ -27,18 +30,21 @@ from meteowatch.widgets.location_search import LocationSearchPage
 logger = logging.getLogger(__name__)
 
 
-class MeteowatchWindow(Adw.ApplicationWindow):
+class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
     """Ventana principal con navegación entre páginas."""
 
-    def __init__(self, config: AppConfig, enable_tray: bool = True, **kwargs):
+    def __init__(self, config: AppConfig, forecast_service: ForecastService,
+                 enable_tray: bool = True, **kwargs):
         """Inicializa la ventana principal.
 
         Args:
             config: Configuración de la aplicación.
+            forecast_service: Servicio centralizado de datos meteorológicos.
             enable_tray: Si se debe activar el icono de bandeja del sistema.
         """
         super().__init__(**kwargs)
         self._config = config
+        self._forecast_service = forecast_service
         self._enable_tray = enable_tray
 
         # Flag para distinguir cierre real vs minimizar al tray
@@ -47,8 +53,9 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         # Motor de alertas climáticas (persiste estado de deduplicación)
         self._alert_engine = AlertEngine()
 
-        # Temporizador de actualización periódica del icono del tray
-        self._refresh_timer_id: int = 0
+        # Temporizadores de actualización periódica
+        self._current_timer_id: int = 0   # cada 15 min
+        self._forecast_timer_id: int = 0  # cada 1 hora
 
         self.set_title("Meteowatch")
         self.set_default_size(420, 680)
@@ -69,6 +76,9 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         self._tray = None
         if self._enable_tray:
             GLib.idle_add(self._init_tray)
+
+        # Suscribirse al ForecastService para recibir actualizaciones
+        self._forecast_service.subscribe(self)
 
         # Determinar página inicial
         if config.is_configured():
@@ -118,20 +128,12 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         logger.info("Navegando a: pronóstico diario (lat=%.4f, lon=%.4f)", self._config.latitude, self._config.longitude)
         page = DailyForecastPage(
             config=self._config,
+            forecast_service=self._forecast_service,
             on_day_selected=self._on_day_selected,
             on_change_location=self._on_change_location,
-            on_weather_updated=self._on_weather_updated,
         )
         self._navigation.push(page)
         page.load_forecast()
-
-    def _on_weather_updated(self, symbol_emoji: str, temperature: float | None) -> None:
-        """Actualiza el icono del tray y arranca el refresco periódico."""
-        if self._tray is not None:
-            self._tray.update_icon(symbol_emoji, temperature)
-        # Iniciar refresco cada hora tras la primera carga exitosa
-        if self._refresh_timer_id == 0 and self._config.is_configured():
-            self._start_periodic_refresh()
 
     def _show_hourly_forecast(self, location_hash: str, day_start: int) -> None:
         """Muestra la página de pronóstico por hora.
@@ -143,6 +145,7 @@ class MeteowatchWindow(Adw.ApplicationWindow):
         logger.info("Navegando a: pronóstico por hora")
         page = HourlyForecastPage(
             config=self._config,
+            forecast_service=self._forecast_service,
             location_hash=location_hash,
             on_change_location=self._on_change_location,
         )
@@ -193,92 +196,136 @@ class MeteowatchWindow(Adw.ApplicationWindow):
 
     def cleanup_tray(self) -> None:
         """Libera los recursos del system tray al cerrar la aplicación."""
-        self._stop_periodic_refresh()
+        self._stop_timers()
+        self._forecast_service.unsubscribe(self)
         if self._tray is not None:
             self._tray.cleanup()
             self._tray = None
 
     # ------------------------------------------------------------------
-    # Refresco periódico del icono del tray (cada hora)
+    # Timers de refresco periódico
     # ------------------------------------------------------------------
 
-    def _start_periodic_refresh(self) -> None:
-        """Inicia el temporizador de refresco horario del icono del tray."""
-        if self._refresh_timer_id != 0:
-            return
-        # 3600 segundos = 1 hora
-        self._refresh_timer_id = GLib.timeout_add_seconds(
-            3600, self._on_periodic_refresh
-        )
-        logger.info("Refresco periódico del tray iniciado (cada 1 hora)")
+    def start_timers(self) -> None:
+        """Inicia los temporizadores de refresco periódico.
 
-    def _stop_periodic_refresh(self) -> None:
-        """Detiene el temporizador de refresco periódico."""
-        if self._refresh_timer_id != 0:
-            GLib.source_remove(self._refresh_timer_id)
-            self._refresh_timer_id = 0
-            logger.debug("Refresco periódico del tray detenido")
-
-    def _on_periodic_refresh(self) -> bool:
-        """Callback del temporizador: actualiza el icono del tray y evalúa alertas.
-
-        Consulta el pronóstico completo en un hilo secundario,
-        actualiza el icono del tray y evalúa alertas climáticas.
-
-        Returns:
-            True para mantener el temporizador activo (GLib.timeout_add).
+        - current: cada 15 minutos (900s)
+        - forecast: cada 1 hora (3600s)
         """
         if not self._config.is_configured():
-            logger.debug("App no configurada, omitiendo refresco periódico")
-            return True
+            return
 
-        logger.debug("Iniciando refresco periódico del tray...")
+        if self._current_timer_id == 0:
+            self._current_timer_id = GLib.timeout_add_seconds(
+                900, self._on_current_timer
+            )
+            logger.info("Timer de current iniciado (cada 15 min)")
 
-        # Programar el refresco en hilo secundario
-        keep_running = True
-        self._start_refresh_thread()
-        return keep_running
+        if self._forecast_timer_id == 0:
+            self._forecast_timer_id = GLib.timeout_add_seconds(
+                3600, self._on_forecast_timer
+            )
+            logger.info("Timer de forecast iniciado (cada 1 hora)")
 
-    def _start_refresh_thread(self) -> None:
-        """Lanza un hilo secundario para consultar la API y evaluar alertas."""
-        import threading
+    def _stop_timers(self) -> None:
+        """Detiene ambos temporizadores de refresco periódico."""
+        if self._current_timer_id != 0:
+            GLib.source_remove(self._current_timer_id)
+            self._current_timer_id = 0
+            logger.debug("Timer de current detenido")
+        if self._forecast_timer_id != 0:
+            GLib.source_remove(self._forecast_timer_id)
+            self._forecast_timer_id = 0
+            logger.debug("Timer de forecast detenido")
 
-        def do_refresh():
-            try:
-                client = OpenMeteoClient()
-                result = client.get_forecast(
-                    self._config.latitude,
-                    self._config.longitude,
-                    self._config.timezone,
-                )
-                current = result.current
-                symbol = get_weather_symbol(current.symbol)
-                GLib.idle_add(
-                    self._on_weather_updated,
-                    symbol.emoji,
-                    current.temperature,
-                )
-                logger.info(
-                    "Tray actualizado (periódico): %s %.1f°C",
-                        symbol.emoji, current.temperature,
-                    )
+    def _on_current_timer(self) -> bool:
+        """Callback del timer de current (cada 15 min).
 
-                # Evaluar alertas climáticas con los datos completos del forecast
-                alerts = self._alert_engine.evaluate(
-                    result.daily, result.hourly,
-                )
-                if alerts:
-                    app = self.get_application()
-                    if app is not None:
-                        GLib.idle_add(send_alerts, alerts)
-                    logger.info(
-                        "Alertas enviadas en refresco periódico: %d",
-                        len(alerts),
-                    )
-            except OpenMeteoError as e:
-                logger.warning("Error de API en refresco periódico: %s", e)
-            except Exception:
-                logger.exception("Error inesperado en refresco periódico")
+        Returns:
+            True para mantener el timer activo.
+        """
+        if self._config.is_configured():
+            logger.debug("Timer de current: solicitando refresh...")
+            self._forecast_service.refresh_current(
+                GLib.idle_add,
+                self._config.latitude,
+                self._config.longitude,
+                self._config.timezone,
+            )
+        return True  # noqa: S1751 — GLib timeout requiere retornar siempre bool
 
-        thread = threading.Thread(target=do_refresh, daemon=True)
-        thread.start()
+    def _on_forecast_timer(self) -> bool:
+        """Callback del timer de forecast (cada 1 hora).
+
+        Returns:
+            True para mantener el timer activo.
+        """
+        if self._config.is_configured():
+            logger.debug("Timer de forecast: solicitando refresh...")
+            self._forecast_service.refresh_forecast(
+                GLib.idle_add,
+                self._config.latitude,
+                self._config.longitude,
+                self._config.timezone,
+            )
+        return True  # noqa: S1751 — GLib timeout requiere retornar siempre bool
+
+    # ------------------------------------------------------------------
+    # ForecastObserver implementation
+    # ------------------------------------------------------------------
+
+    def on_current_updated(self, current: CurrentWeather) -> None:
+        """Actualiza el icono del tray con las condiciones actuales.
+
+        Args:
+            current: Condiciones actuales actualizadas.
+        """
+        try:
+            symbol = get_weather_symbol(current.symbol)
+            if self._tray is not None:
+                self._tray.update_icon(symbol.emoji, current.temperature)
+            logger.debug(
+                "Tray actualizado (current): %s %.1f°C",
+                symbol.emoji, current.temperature,
+            )
+        except Exception:
+            logger.exception("Error al actualizar tray en on_current_updated")
+
+    def on_forecast_updated(self, result: ForecastResult) -> None:
+        """Actualiza el icono del tray y evalúa alertas climáticas.
+
+        Args:
+            result: ForecastResult con daily, hourly y current nuevos.
+        """
+        # Actualizar tray con las condiciones actuales incluidas en el forecast
+        try:
+            symbol = get_weather_symbol(result.current.symbol)
+            if self._tray is not None:
+                self._tray.update_icon(symbol.emoji, result.current.temperature)
+            logger.debug(
+                "Tray actualizado (forecast): %s %.1f°C",
+                symbol.emoji, result.current.temperature,
+            )
+        except Exception:
+            logger.exception("Error al actualizar tray en on_forecast_updated")
+
+        # Evaluar alertas climáticas con los datos completos del forecast
+        try:
+            alerts = self._alert_engine.evaluate(result.daily, result.hourly)
+            if alerts:
+                logger.info("Alertas detectadas en refresh: %d", len(alerts))
+                send_alerts(alerts)
+        except Exception:
+            logger.exception("Error al evaluar alertas en on_forecast_updated")
+
+    def on_forecast_error(self, message: str, cached: bool) -> None:
+        """Registra el error de forecast (el manejo visual lo hace la UI).
+
+        Args:
+            message: Mensaje descriptivo del error.
+            cached: True si hay datos en cache como fallback.
+        """
+        if cached:
+            logger.warning("Error de forecast (con cache): %s", message)
+        else:
+            logger.error("Error de forecast (sin cache): %s", message)
