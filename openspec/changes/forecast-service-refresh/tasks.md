@@ -66,7 +66,7 @@
 - [x] 9.2 Añadir tests para `ForecastService`: suscripción, notificación, control de concurrencia
 - [x] 9.3 Añadir tests para modo offline: fallback a cache, error sin cache
 - [x] 9.4 Añadir tests para reintentos con backoff (mock de requests)
-- [x] 9.5 Añadir tests para `DailyForecastPage` con `ForecastService` mockeado: frescura, colores, modo offline
+- [x] 9.5 Añadir tests para `DailyForecastPage` con `ForecastService` mockeado: frescura, colores, modo offline (`tests/test_widgets_integration.py`)
 - [x] 9.6 Actualizar tests existentes de `test_tray_icon.py` y `test_hourly_panel.py` si es necesario
 
 ## 10. Limpieza
