@@ -470,6 +470,8 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
     # ------------------------------------------------------------------
     # Navegación
     # ------------------------------------------------------------------
+
+    def _on_24h_clicked(self, button: Gtk.Button) -> None:
         """Navega al pronóstico detallado de las próximas 24 horas."""
         if self._forecast and self._forecast.days:
             today = self._forecast.days[0]
