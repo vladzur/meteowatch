@@ -16,6 +16,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from meteowatch.alerts import Alert, send_alerts
 from meteowatch.config import AppConfig
+from meteowatch.services.forecast import ForecastService
 from meteowatch.window import MeteowatchWindow
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class MeteowatchApp(Adw.Application):
             | Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         self._config = AppConfig.load()
+        self._forecast_service = ForecastService()
         self._window: "MeteowatchWindow | None" = None
         self._enable_tray: bool = True
         self._test_alert: str | None = None  # Nivel de alerta de prueba
@@ -69,6 +71,7 @@ class MeteowatchApp(Adw.Application):
         self._window = MeteowatchWindow(
             application=self,
             config=self._config,
+            forecast_service=self._forecast_service,
             enable_tray=self._enable_tray,
         )
         self._window.present()
