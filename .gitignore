@@ -31,3 +31,7 @@ Thumbs.db
 
 # Config local (contiene API key)
 config.json
+
+# Github prompts
+.github/prompts
+.github/skills
