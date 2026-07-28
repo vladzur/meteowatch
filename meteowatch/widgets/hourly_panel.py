@@ -2,6 +2,9 @@
 
 Muestra el desglose hora a hora del pronóstico para varios días,
 con separadores visuales entre días y datos detallados por hora.
+
+Se suscribe al ForecastService para recibir actualizaciones
+automáticas del pronóstico.
 """
 
 import logging
@@ -17,10 +20,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
-from meteowatch.api.client import OpenMeteoClient, OpenMeteoError
+from meteowatch.api.client import ForecastResult, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
 from meteowatch.models.hourly import HourData, HourlyForecast
+from meteowatch.services.forecast import BaseForecastObserver, ForecastService
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +41,20 @@ def _degrees_to_cardinal(degrees: int) -> str:
     return directions[index]
 
 
-class HourlyForecastPage(Adw.NavigationPage):
-    """Página que muestra el pronóstico detallado por hora."""
+class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
+    """Página que muestra el pronóstico detallado por hora.
 
-    def __init__(self, config: AppConfig, location_hash: str,
-                 on_change_location=None):
+    Se suscribe al ForecastService y reconstruye la grilla automáticamente
+    cuando llegan datos actualizados, solo si hay cambios.
+    """
+
+    def __init__(self, config: AppConfig, forecast_service: ForecastService,
+                 location_hash: str, on_change_location=None):
         """Inicializa la página de detalle por hora.
 
         Args:
             config: Configuración de la aplicación.
+            forecast_service: Servicio centralizado de datos meteorológicos.
             location_hash: No usado (mantenido por compatibilidad).
             on_change_location: Callback opcional para cambiar de ubicación.
         """
@@ -59,8 +68,12 @@ class HourlyForecastPage(Adw.NavigationPage):
             tz = ZoneInfo("UTC")
 
         self._config = config
+        self._forecast_service = forecast_service
         self._timezone = tz
         self._on_change_location = on_change_location
+
+        # Datos del forecast
+        self._forecast: Optional[HourlyForecast] = None
 
         # Estado interno para el filtro de horas pasadas
         self._all_hours: list[HourData] = []
@@ -69,6 +82,9 @@ class HourlyForecastPage(Adw.NavigationPage):
         self._toggle_btn: Gtk.ToggleButton | None = None
 
         self._build_ui()
+
+        # Suscribirse al ForecastService
+        self._forecast_service.subscribe(self)
 
     def _build_ui(self) -> None:
         """Construye la interfaz de la página de pronóstico por hora."""
@@ -125,36 +141,108 @@ class HourlyForecastPage(Adw.NavigationPage):
         self._load_hourly_forecast()
 
     def _load_hourly_forecast(self) -> None:
-        """Carga el pronóstico por hora desde la API en segundo plano."""
+        """Carga el pronóstico por hora desde el ForecastService.
+
+        Si hay datos en cache, los muestra inmediatamente y solicita
+        un refresh en segundo plano.
+        """
         logger.info("Cargando pronóstico por hora para lat=%.4f, lon=%.4f...",
                     self._config.latitude, self._config.longitude)
 
-        def do_load():
-            try:
-                client = OpenMeteoClient()
-                forecast = client.get_hourly_forecast(
-                    self._config.latitude,
-                    self._config.longitude,
-                    self._config.timezone,
-                )
-                logger.info("Pronóstico por hora cargado: %d horas", len(forecast.hours))
-                GLib.idle_add(self._on_forecast_loaded, forecast)
-            except OpenMeteoError as e:
-                logger.exception("Error de API al cargar pronóstico por hora")
-                GLib.idle_add(self._on_forecast_error, str(e))
-            except Exception:
-                logger.exception("Error inesperado al cargar pronóstico por hora")
-                GLib.idle_add(self._on_forecast_error, "Error inesperado. Revisa los logs para más detalles.")
+        # Intentar mostrar datos cacheados inmediatamente
+        cached = self._forecast_service.get_cached_forecast()
+        if cached is not None and cached.hourly is not None:
+            self._on_forecast_loaded(cached.hourly)
 
-        import threading
-        thread = threading.Thread(target=do_load, daemon=True)
-        thread.start()
+        # Solicitar refresh al servicio
+        self._forecast_service.refresh_forecast(
+            GLib.idle_add,
+            self._config.latitude,
+            self._config.longitude,
+            self._config.timezone,
+        )
+
+    # ------------------------------------------------------------------
+    # ForecastObserver implementation
+    # ------------------------------------------------------------------
+
+    def on_forecast_updated(self, result: ForecastResult) -> None:
+        """Recibe datos actualizados del ForecastService.
+
+        Reconstruye la grilla horaria solo si los datos cambiaron.
+
+        Args:
+            result: ForecastResult con hourly nuevo.
+        """
+        new_hourly = result.hourly
+        if new_hourly is None:
+            return
+
+        logger.debug("HourlyForecastPage.on_forecast_updated: %d horas",
+                     len(new_hourly.hours))
+
+        # Comparar con datos actuales
+        if self._has_hourly_changed(new_hourly):
+            self._on_forecast_loaded(new_hourly)
+
+    def on_forecast_error(self, message: str, cached: bool) -> None:
+        """Maneja errores del ForecastService.
+
+        Args:
+            message: Mensaje descriptivo del error.
+            cached: True si hay datos en cache.
+        """
+        if cached and self._forecast is not None:
+            # Ya tenemos datos cacheados mostrados, solo loguear
+            logger.warning("Error de forecast en página horaria (con cache): %s", message)
+        else:
+            logger.error("Error de forecast en página horaria (sin cache): %s", message)
+            self._spinner.stop()
+            self._spinner.set_visible(False)
+            self._error_label.set_markup(
+                f"<b>Error al cargar el pronóstico</b>\n\n{message}"
+            )
+            self._error_label.set_visible(True)
+
+    # ------------------------------------------------------------------
+    # Comparación para refresco transparente
+    # ------------------------------------------------------------------
+
+    def _has_hourly_changed(self, new_hourly: HourlyForecast) -> bool:
+        """Compara el forecast horario nuevo con el actual.
+
+        Args:
+            new_hourly: Forecast horario recién obtenido.
+
+        Returns:
+            True si los datos cambiaron.
+        """
+        if self._forecast is None:
+            return True
+
+        old_hours = self._forecast.hours
+        new_hours = new_hourly.hours
+
+        if len(old_hours) != len(new_hours):
+            return True
+
+        # Comparar atributos clave de cada hora
+        for old_h, new_h in zip(old_hours, new_hours):
+            if (old_h.temperature != new_h.temperature
+                    or old_h.symbol != new_h.symbol
+                    or old_h.precipitation != new_h.precipitation
+                    or old_h.rain_probability != new_h.rain_probability
+                    or old_h.wind_speed != new_h.wind_speed):
+                return True
+
+        return False
 
     def _on_forecast_loaded(self, forecast: HourlyForecast) -> None:
         """Muestra el pronóstico por hora cargado, filtrando horas pasadas."""
         logger.debug("Mostrando %d horas en UI", len(forecast.hours))
         self._spinner.stop()
         self._spinner.set_visible(False)
+        self._forecast = forecast
 
         if not forecast.hours:
             logger.warning("No hay datos de horas en el pronóstico")
@@ -239,17 +327,6 @@ class HourlyForecastPage(Adw.NavigationPage):
                 list_box.append(row)
 
         return list_box
-
-    def _on_forecast_error(self, message: str) -> None:
-        """Muestra un error al cargar el pronóstico."""
-        logger.error("Error al cargar pronóstico por hora: %s", message)
-        self._spinner.stop()
-        self._spinner.set_visible(False)
-
-        self._error_label.set_markup(
-            f"<b>Error al cargar el pronóstico por hora</b>\n\n{message}"
-        )
-        self._error_label.set_visible(True)
 
     # ------------------------------------------------------------------
     # Agrupación por día y separadores visuales
