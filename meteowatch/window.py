@@ -297,6 +297,9 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
         Args:
             result: ForecastResult con daily, hourly y current nuevos.
         """
+        # Iniciar timers en el primer forecast exitoso
+        self.start_timers()
+
         # Actualizar tray con las condiciones actuales incluidas en el forecast
         try:
             symbol = get_weather_symbol(result.current.symbol)

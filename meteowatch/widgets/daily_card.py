@@ -87,6 +87,12 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._freshness_timer_id: int = 0
         self._is_offline: bool = False
 
+        # Referencias a widgets de current para actualización parcial
+        self._cur_icon_label: Optional[Gtk.Label] = None
+        self._cur_temp_label: Optional[Gtk.Label] = None
+        self._cur_feels_label: Optional[Gtk.Label] = None
+        self._cur_humidity_label: Optional[Gtk.Label] = None
+
         self._build_ui()
 
         # Suscribirse al ForecastService para recibir actualizaciones
@@ -273,7 +279,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._hourly = new_hourly
         self._is_offline = False
 
-        if changed or self._spinner.is_spinning():
+        if changed or self._spinner.get_spinning():
             # Reconstruir UI solo si cambió o es la primera carga
             self._on_forecast_loaded(new_forecast, new_current)
         else:
@@ -287,6 +293,38 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         # Iniciar timer de frescura si no estaba activo
         self._start_freshness_timer()
+
+    def on_current_updated(self, current: CurrentWeather) -> None:
+        """Actualiza la tarjeta de condiciones actuales sin reconstruir todo.
+
+        Args:
+            current: Condiciones actuales actualizadas.
+        """
+        logger.debug("DailyForecastPage.on_current_updated: %.1f°C (symbol=%s)",
+                     current.temperature, current.symbol)
+        self._current = current
+        self._is_offline = False
+
+        # Actualizar widgets in-place si existen
+        if self._cur_icon_label is not None:
+            cur_symbol = get_weather_symbol(current.symbol)
+            self._cur_icon_label.set_markup(
+                f"<span size='large'>{cur_symbol.emoji}</span>"
+            )
+        if self._cur_temp_label is not None:
+            self._cur_temp_label.set_markup(
+                f"<span size='xx-large'><b>{current.temperature:.1f}°C</b></span>"
+            )
+        if self._cur_feels_label is not None:
+            self._cur_feels_label.set_markup(
+                f"<small>Sensación {current.feels_like:.1f}°C</small>"
+            )
+        if self._cur_humidity_label is not None:
+            self._cur_humidity_label.set_markup(
+                f"<small>💧 {current.humidity}%</small>"
+            )
+
+        self._update_freshness_label()
 
     def on_forecast_error(self, message: str, cached: bool) -> None:
         """Maneja errores del ForecastService.
@@ -360,6 +398,12 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._spinner.set_visible(False)
         self._forecast = forecast
         self.set_title(self._config.location_name or "Meteowatch")
+
+        # Resetear referencias a widgets de current (se recrean abajo)
+        self._cur_icon_label = None
+        self._cur_temp_label = None
+        self._cur_feels_label = None
+        self._cur_humidity_label = None
 
         # Limpiar widgets de forecast anteriores (excepto spinner, error, banner y freshness)
         children_to_remove = []
@@ -509,13 +553,15 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             cur_icon = Gtk.Label()
             cur_icon.set_markup(f"<span size='large'>{cur_symbol.emoji}</span>")
             current_box.append(cur_icon)
+            self._cur_icon_label = cur_icon
 
             # Temperatura actual
             cur_temp_label = Gtk.Label()
             cur_temp_label.set_markup(
-                f"<span size='xx-large'><b>{current.temperature:.0f}°C</b></span>"
+                f"<span size='xx-large'><b>{current.temperature:.1f}°C</b></span>"
             )
             current_box.append(cur_temp_label)
+            self._cur_temp_label = cur_temp_label
 
             # Columna de detalles: sensación térmica, humedad y "Ahora"
             details_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -523,11 +569,12 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
             feels_label = Gtk.Label()
             feels_label.set_markup(
-                f"<small>Sensación {current.feels_like:.0f}°C</small>"
+                f"<small>Sensación {current.feels_like:.1f}°C</small>"
             )
             feels_label.set_halign(Gtk.Align.START)
             feels_label.set_xalign(0)
             details_col.append(feels_label)
+            self._cur_feels_label = feels_label
 
             humidity_label = Gtk.Label()
             humidity_label.set_markup(
@@ -536,6 +583,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             humidity_label.set_halign(Gtk.Align.START)
             humidity_label.set_xalign(0)
             details_col.append(humidity_label)
+            self._cur_humidity_label = humidity_label
 
             cur_desc = Gtk.Label()
             cur_desc.set_markup("<small>Ahora</small>")
@@ -664,12 +712,12 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         temp_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         temp_col.set_valign(Gtk.Align.CENTER)
         temp_max_lbl = Gtk.Label()
-        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.0f}°C</b></big>")
+        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.1f}°C</b></big>")
         temp_max_lbl.set_halign(Gtk.Align.END)
         temp_max_lbl.set_xalign(1)
         temp_col.append(temp_max_lbl)
         temp_min_lbl = Gtk.Label()
-        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.0f}°C</small>")
+        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.1f}°C</small>")
         temp_min_lbl.set_halign(Gtk.Align.END)
         temp_min_lbl.set_xalign(1)
         temp_col.append(temp_min_lbl)

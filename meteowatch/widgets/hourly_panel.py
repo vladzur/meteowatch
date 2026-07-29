@@ -454,15 +454,15 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         temp_label = Gtk.Label()
         temp_label.set_markup(
-            f"<big><b>{hour_data.temperature:.0f}°C</b></big>"
+            f"<big><b>{hour_data.temperature:.1f}°C</b></big>"
         )
-        temp_label.set_halign(Gtk.Align.START)
-        temp_label.set_xalign(0)
-        center_col.append(temp_label)
+        temp_label.set_halign(Gtk.Align.END)
+        temp_label.set_xalign(1)
+        temp_box.append(temp_label)
 
         feels_label = Gtk.Label()
         feels_label.set_markup(
-            f"<small>Sensación {hour_data.temperature_feels_like:.0f}°C</small>"
+            f"<small>Sensación {hour_data.temperature_feels_like:.1f}°C</small>"
         )
         feels_label.set_halign(Gtk.Align.START)
         feels_label.set_xalign(0)
