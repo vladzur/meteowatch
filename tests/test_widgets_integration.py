@@ -93,6 +93,11 @@ class TestDailyForecastPageMethods:
         assert hasattr(DailyForecastPage, "on_forecast_updated")
         assert callable(getattr(DailyForecastPage, "on_forecast_updated"))
 
+    def test_has_on_current_updated(self):
+        """Debe tener el método on_current_updated del protocolo observer."""
+        assert hasattr(DailyForecastPage, "on_current_updated")
+        assert callable(getattr(DailyForecastPage, "on_current_updated"))
+
     def test_has_on_forecast_error(self):
         """Debe tener el método on_forecast_error del protocolo observer."""
         assert hasattr(DailyForecastPage, "on_forecast_error")
