@@ -57,6 +57,20 @@
   </screenshots>
 
   <releases>
+    <release version="1.4.0" date="2026-07-28">
+      <description>
+        <p>Servicio centralizado de datos y actualización automática mejorada.</p>
+        <ul>
+          <li>Nuevo ForecastService: única fuente de verdad con cache en memoria y TTLs diferenciados (15 min para condiciones actuales, 1 h para forecast completo)</li>
+          <li>Dos temporizadores independientes: actualización del icono de bandeja cada 15 minutos y forecast completo cada hora</li>
+          <li>Refresco transparente de la UI: las tarjetas se reconstruyen solo si los datos cambiaron</li>
+          <li>Indicador de frescura: "Actualizado hace X min" con cambio de color según antigüedad</li>
+          <li>Modo offline: si la API falla, se muestran datos cacheados con indicador de desconexión (🔌)</li>
+          <li>Reintentos con backoff exponencial ante fallos de red</li>
+          <li>Temperaturas con precisión de una décima (3.4 °C en lugar de 3 °C)</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.1" date="2026-07-25">
       <description>
         <p>Corrección en widget por hora y mejora en icono de bandeja.</p>

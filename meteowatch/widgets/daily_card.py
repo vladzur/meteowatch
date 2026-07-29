@@ -2,6 +2,9 @@
 
 Muestra una lista con el pronóstico de los próximos 5 días
 en tarjetas con iconos, temperaturas y datos relevantes.
+
+Se suscribe al ForecastService para recibir actualizaciones
+automáticas y muestra un indicador de frescura de los datos.
 """
 
 import logging
@@ -16,13 +19,14 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
-from meteowatch.api.client import OpenMeteoClient, OpenMeteoError, CurrentWeather
+from meteowatch.api.client import CurrentWeather, ForecastResult, OpenMeteoError
 from meteowatch.alerts import AlertEngine
 from meteowatch.alerts.rules import Alert
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
-from meteowatch.models.daily import DailyForecast
+from meteowatch.models.daily import DailyForecast, DayData
 from meteowatch.models.hourly import HourlyForecast
+from meteowatch.services.forecast import BaseForecastObserver, ForecastService
 
 logger = logging.getLogger(__name__)
 
@@ -46,32 +50,53 @@ def _degrees_to_cardinal(degrees: int) -> str:
     return directions[index]
 
 
-class DailyForecastPage(Adw.NavigationPage):
-    """Página que muestra el pronóstico diario para la ubicación seleccionada."""
+class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
+    """Página que muestra el pronóstico diario para la ubicación seleccionada.
 
-    def __init__(self, config: AppConfig, on_day_selected, on_change_location,
-                 on_weather_updated=None, on_alerts_detected=None):
+    Se suscribe al ForecastService y reacciona a on_forecast_updated
+    reconstruyendo la UI solo si los datos cambiaron.
+    """
+
+    # Constantes para el indicador de frescura
+    FRESHNESS_WARNING_MINUTES = 60    # >1h → amarillo
+    FRESHNESS_ERROR_MINUTES = 180     # >3h → naranja
+
+    def __init__(self, config: AppConfig, forecast_service: ForecastService,
+                 on_day_selected, on_change_location):
         """Inicializa la página de pronóstico diario.
 
         Args:
             config: Configuración de la aplicación.
+            forecast_service: Servicio centralizado de datos meteorológicos.
             on_day_selected: Callback(location_hash, day_start_timestamp) al hacer clic en un día.
             on_change_location: Callback() para volver a la pantalla de búsqueda.
-            on_weather_updated: Callback(symbol_emoji, temperature) al actualizar el clima.
-            on_alerts_detected: Callback(alerts) al detectar alertas en el forecast.
         """
         super().__init__()
         self.set_title(config.location_name or "Meteowatch")
         self._config = config
+        self._forecast_service = forecast_service
         self._on_day_selected = on_day_selected
         self._on_change_location = on_change_location
-        self._on_weather_updated = on_weather_updated
-        self._on_alerts_detected = on_alerts_detected
         self._forecast: Optional[DailyForecast] = None
+        self._current: Optional[CurrentWeather] = None
+        self._hourly: Optional[HourlyForecast] = None
         self._alert_engine = AlertEngine()
         self._alert_banner: Optional[Gtk.Revealer] = None
         self._alert_banner_label: Optional[Gtk.Label] = None
+        self._freshness_label: Optional[Gtk.Label] = None
+        self._freshness_timer_id: int = 0
+        self._is_offline: bool = False
+
+        # Referencias a widgets de current para actualización parcial
+        self._cur_icon_label: Optional[Gtk.Label] = None
+        self._cur_temp_label: Optional[Gtk.Label] = None
+        self._cur_feels_label: Optional[Gtk.Label] = None
+        self._cur_humidity_label: Optional[Gtk.Label] = None
+
         self._build_ui()
+
+        # Suscribirse al ForecastService para recibir actualizaciones
+        self._forecast_service.subscribe(self)
 
     def _build_ui(self) -> None:
         """Construye la interfaz de la página de pronóstico diario."""
@@ -167,98 +192,328 @@ class DailyForecastPage(Adw.NavigationPage):
         self._error_label.set_visible(False)
         self._main_box.append(self._error_label)
 
+        # Indicador de frescura (al pie, sutil)
+        self._freshness_label = Gtk.Label()
+        self._freshness_label.set_halign(Gtk.Align.CENTER)
+        self._freshness_label.set_margin_top(8)
+        self._freshness_label.set_margin_bottom(4)
+        self._freshness_label.add_css_class("dim-label")
+        self._freshness_label.set_visible(True)
+        self._freshness_label.set_markup("<small>🕐 Cargando…</small>")
+        self._main_box.append(self._freshness_label)
+
     def load_forecast(self) -> None:
-        """Carga el pronóstico diario y la temperatura actual desde la API."""
+        """Solicita el pronóstico al ForecastService.
+
+        Delega el fetching en el servicio centralizado. Si los datos
+        ya están en cache y frescos, la UI se construye inmediatamente.
+        """
         logger.info("Cargando pronóstico diario para lat=%.4f, lon=%.4f...",
                     self._config.latitude, self._config.longitude)
         self._spinner.set_visible(True)
         self._spinner.start()
         self._error_label.set_visible(False)
+        self._is_offline = False
 
-        # Limpiar widgets de forecast anteriores (excepto spinner, error y banner)
+        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner y freshness)
         children_to_remove = []
         for child in self._main_box:
             if (child is not self._spinner
                     and child is not self._error_label
-                    and child is not self._alert_banner):
+                    and child is not self._alert_banner
+                    and child is not self._freshness_label):
                 children_to_remove.append(child)
 
         for child in children_to_remove:
             self._main_box.remove(child)
 
-        import threading
-        thread = threading.Thread(target=self._fetch_forecast_thread, daemon=True)
-        thread.start()
+        # Intentar mostrar datos cacheados inmediatamente si existen
+        cached = self._forecast_service.get_cached_forecast()
+        if cached is not None:
+            self._forecast = cached.daily
+            self._current = cached.current
+            self._hourly = cached.hourly
+            self._on_forecast_loaded(cached.daily, cached.current)
+            # Iniciar indicador de frescura
+            self._start_freshness_timer()
+            # Si los datos están frescos, ocultar spinner
+            age = self._forecast_service.get_age_minutes()
+            if age < 60:
+                self._spinner.stop()
+                self._spinner.set_visible(False)
 
-    def _fetch_forecast_thread(self) -> None:
-        """Hilo secundario: consulta la API y evalúa alertas."""
-        try:
-            client = OpenMeteoClient()
-            result = client.get_forecast(
-                self._config.latitude,
-                self._config.longitude,
-                self._config.timezone,
+        # Solicitar refresh al servicio (no bloquea, usa hilo secundario)
+        self._forecast_service.refresh_forecast(
+            GLib.idle_add,
+            self._config.latitude,
+            self._config.longitude,
+            self._config.timezone,
+        )
+
+    # ------------------------------------------------------------------
+    # ForecastObserver implementation
+    # ------------------------------------------------------------------
+
+    def on_forecast_updated(self, result: ForecastResult) -> None:
+        """Recibe datos actualizados del ForecastService.
+
+        Compara con los datos actuales y reconstruye la UI solo si
+        hay diferencias en los días del pronóstico.
+
+        Args:
+            result: ForecastResult con daily, hourly y current nuevos.
+        """
+        logger.debug("DailyForecastPage.on_forecast_updated: %d días",
+                     len(result.daily.days) if result.daily else 0)
+
+        new_forecast = result.daily
+        new_current = result.current
+        new_hourly = result.hourly
+
+        # Determinar si los datos cambiaron respecto a lo mostrado
+        changed = self._has_forecast_changed(new_forecast)
+
+        # Actualizar estado interno
+        self._forecast = new_forecast
+        self._current = new_current
+        self._hourly = new_hourly
+        self._is_offline = False
+
+        if changed or self._spinner.get_spinning():
+            # Reconstruir UI solo si cambió o es la primera carga
+            self._on_forecast_loaded(new_forecast, new_current)
+        else:
+            # Solo actualizar indicador de frescura
+            self._update_freshness_label()
+
+        # Evaluar alertas y mostrar banner
+        alerts = self._alert_engine.evaluate(new_forecast, new_hourly)
+        if alerts:
+            self.set_alerts(alerts)
+
+        # Iniciar timer de frescura si no estaba activo
+        self._start_freshness_timer()
+
+    def on_current_updated(self, current: CurrentWeather) -> None:
+        """Actualiza la tarjeta de condiciones actuales sin reconstruir todo.
+
+        Args:
+            current: Condiciones actuales actualizadas.
+        """
+        logger.debug("DailyForecastPage.on_current_updated: %.1f°C (symbol=%s)",
+                     current.temperature, current.symbol)
+        self._current = current
+        self._is_offline = False
+
+        # Actualizar widgets in-place si existen
+        if self._cur_icon_label is not None:
+            cur_symbol = get_weather_symbol(current.symbol)
+            self._cur_icon_label.set_markup(
+                f"<span size='large'>{cur_symbol.emoji}</span>"
             )
-            forecast = result.daily
-            current = result.current
-            hourly = result.hourly
-            logger.info("Pronóstico diario cargado: %d días", len(forecast.days))
-            logger.info(
-                "Condiciones actuales: %.1f°C (symbol=%s)",
-                current.temperature, current.symbol,
+        if self._cur_temp_label is not None:
+            self._cur_temp_label.set_markup(
+                f"<span size='xx-large'><b>{current.temperature:.1f}°C</b></span>"
+            )
+        if self._cur_feels_label is not None:
+            self._cur_feels_label.set_markup(
+                f"<small>Sensación {current.feels_like:.1f}°C</small>"
+            )
+        if self._cur_humidity_label is not None:
+            self._cur_humidity_label.set_markup(
+                f"<small>💧 {current.humidity}%</small>"
             )
 
-            # Evaluar alertas climáticas
-            alerts = self._alert_engine.evaluate(forecast, hourly)
-            if alerts:
-                logger.info(
-                    "Alertas detectadas en carga inicial: %d", len(alerts)
-                )
+        self._update_freshness_label()
 
-            # Notificar al tray (vía callback de la ventana) los datos del clima
-            if self._on_weather_updated:
-                try:
-                    weather_symbol = get_weather_symbol(current.symbol)
-                    self._on_weather_updated(
-                        weather_symbol.emoji, current.temperature
-                    )
-                except Exception:
-                    logger.exception("Error al notificar actualización de clima al tray")
+    def on_forecast_error(self, message: str, cached: bool) -> None:
+        """Maneja errores del ForecastService.
 
-            GLib.idle_add(
-                self._on_forecast_loaded, forecast, current, alerts,
+        Args:
+            message: Mensaje descriptivo del error.
+            cached: True si hay datos en cache que pueden usarse como fallback.
+        """
+        if cached and self._forecast is not None:
+            # Mostrar datos cacheados con indicador de desconexión
+            logger.warning("Error de forecast, usando cache: %s", message)
+            self._is_offline = True
+            self._spinner.stop()
+            self._spinner.set_visible(False)
+            self._update_freshness_label()
+            self._start_freshness_timer()
+        else:
+            # Sin cache: mostrar error
+            logger.error("Error de forecast sin cache: %s", message)
+            self._spinner.stop()
+            self._spinner.set_visible(False)
+            self._error_label.set_markup(
+                f"<b>Error al cargar el pronóstico</b>\n\n{message}"
             )
-        except OpenMeteoError as e:
-            logger.exception("Error de API al cargar pronóstico diario")
-            GLib.idle_add(self._on_forecast_error, str(e))
-        except Exception:
-            logger.exception("Error inesperado al cargar pronóstico diario")
-            GLib.idle_add(self._on_forecast_error, "Error inesperado. Revisa los logs para más detalles.")
+            self._error_label.set_visible(True)
+
+    # ------------------------------------------------------------------
+    # Comparación de datos para refresco transparente
+    # ------------------------------------------------------------------
+
+    def _has_forecast_changed(self, new_forecast: DailyForecast) -> bool:
+        """Compara el forecast nuevo con el actual para detectar cambios.
+
+        Args:
+            new_forecast: Forecast recién obtenido.
+
+        Returns:
+            True si los datos cambiaron (cantidad de días o contenido).
+        """
+        if self._forecast is None:
+            return True
+
+        old_days = self._forecast.days
+        new_days = new_forecast.days
+
+        if len(old_days) != len(new_days):
+            return True
+
+        # Comparar atributos clave de cada día
+        for old_day, new_day in zip(old_days, new_days):
+            if (old_day.temperature_max != new_day.temperature_max
+                    or old_day.temperature_min != new_day.temperature_min
+                    or old_day.symbol != new_day.symbol
+                    or old_day.precipitation != new_day.precipitation
+                    or old_day.rain_probability != new_day.rain_probability
+                    or old_day.wind_speed != new_day.wind_speed
+                    or old_day.wind_gust != new_day.wind_gust):
+                return True
+
+        return False
+
+    # ------------------------------------------------------------------
+    # Carga de datos en UI
+    # ------------------------------------------------------------------
 
     def _on_forecast_loaded(self, forecast: DailyForecast,
-                            current: Optional[CurrentWeather] = None,
-                            alerts: Optional[list[Alert]] = None) -> None:
-        """Muestra el pronóstico diario cargado y las alertas detectadas."""
+                            current: Optional[CurrentWeather] = None) -> None:
+        """Muestra el pronóstico diario cargado en la UI."""
         logger.debug("Mostrando pronóstico diario en UI: %s", self._config.location_name)
         self._spinner.stop()
         self._spinner.set_visible(False)
         self._forecast = forecast
         self.set_title(self._config.location_name or "Meteowatch")
 
+        # Resetear referencias a widgets de current (se recrean abajo)
+        self._cur_icon_label = None
+        self._cur_temp_label = None
+        self._cur_feels_label = None
+        self._cur_humidity_label = None
+
+        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner y freshness)
+        children_to_remove = []
+        for child in self._main_box:
+            if (child is not self._spinner
+                    and child is not self._error_label
+                    and child is not self._alert_banner
+                    and child is not self._freshness_label):
+                children_to_remove.append(child)
+
+        for child in children_to_remove:
+            self._main_box.remove(child)
+
         self._build_forecast_card(forecast, current)
+        self._update_freshness_label()
 
-        # Mostrar banner de alertas si hay alertas activas
-        if alerts:
-            self.set_alerts(alerts)
+    # ------------------------------------------------------------------
+    # Indicador de frescura
+    # ------------------------------------------------------------------
 
-    def _on_forecast_error(self, message: str) -> None:
-        """Muestra un error al cargar el pronóstico."""
-        logger.error("Error al cargar pronóstico diario: %s", message)
-        self._spinner.stop()
-        self._spinner.set_visible(False)
+    def _start_freshness_timer(self) -> None:
+        """Inicia el timer que actualiza el label de frescura cada 60s."""
+        if self._freshness_timer_id != 0:
+            return
+        self._freshness_timer_id = GLib.timeout_add_seconds(
+            60, self._on_freshness_timer
+        )
 
-        self._error_label.set_markup(f"<b>Error al cargar el pronóstico</b>\n\n{message}")
-        self._error_label.set_visible(True)
+    def _stop_freshness_timer(self) -> None:
+        """Detiene el timer de frescura."""
+        if self._freshness_timer_id != 0:
+            GLib.source_remove(self._freshness_timer_id)
+            self._freshness_timer_id = 0
+
+    def _on_freshness_timer(self) -> bool:
+        """Callback del timer de frescura (cada 60s).
+
+        Returns:
+            True para mantener el timer activo.
+        """
+        self._update_freshness_label()
+        return True
+
+    def _update_freshness_label(self) -> None:
+        """Actualiza el texto y color del indicador de frescura."""
+        if self._freshness_label is None:
+            return
+
+        age_minutes = self._forecast_service.get_age_minutes()
+
+        if self._is_offline:
+            self._set_offline_freshness(age_minutes)
+        else:
+            self._set_normal_freshness(age_minutes)
+
+    def _set_offline_freshness(self, age_minutes: float) -> None:
+        """Configura el label de frescura en modo sin conexión.
+
+        Usa emoji 🔌 (distinto a ⚠️/🔴 de alertas).
+
+        Args:
+            age_minutes: Antigüedad de los datos cacheados en minutos.
+        """
+        assert self._freshness_label is not None
+        if age_minutes < 1:
+            text = "🔌 Sin conexión"
+        elif age_minutes < 60:
+            text = f"🔌 Sin conexión — hace {int(age_minutes)} min"
+        else:
+            hours = int(age_minutes / 60)
+            text = f"🔌 Sin conexión — hace {hours}h"
+        self._freshness_label.set_markup(f"<small>{text}</small>")
+        self._freshness_label.remove_css_class("warning")
+        self._freshness_label.remove_css_class("error")
+
+    def _set_normal_freshness(self, age_minutes: float) -> None:
+        """Configura el label de frescura en modo normal.
+
+        Args:
+            age_minutes: Antigüedad de los datos en minutos.
+        """
+        assert self._freshness_label is not None
+        if age_minutes < 1:
+            text = "🕐 Actualizado ahora"
+        elif age_minutes < 60:
+            text = f"🕐 Actualizado hace {int(age_minutes)} min"
+        else:
+            hours = int(age_minutes / 60)
+            remaining_min = int(age_minutes % 60)
+            if remaining_min > 0:
+                text = f"🕐 Actualizado hace {hours}h {remaining_min}min"
+            else:
+                text = f"🕐 Actualizado hace {hours}h"
+
+        self._freshness_label.set_markup(f"<small>{text}</small>")
+
+        # Color según antigüedad
+        if age_minutes > self.FRESHNESS_ERROR_MINUTES:
+            self._freshness_label.remove_css_class("warning")
+            self._freshness_label.add_css_class("error")
+        elif age_minutes > self.FRESHNESS_WARNING_MINUTES:
+            self._freshness_label.remove_css_class("error")
+            self._freshness_label.add_css_class("warning")
+        else:
+            self._freshness_label.remove_css_class("warning")
+            self._freshness_label.remove_css_class("error")
+
+    # ------------------------------------------------------------------
+    # Navegación
+    # ------------------------------------------------------------------
 
     def _on_24h_clicked(self, button: Gtk.Button) -> None:
         """Navega al pronóstico detallado de las próximas 24 horas."""
@@ -298,13 +553,15 @@ class DailyForecastPage(Adw.NavigationPage):
             cur_icon = Gtk.Label()
             cur_icon.set_markup(f"<span size='large'>{cur_symbol.emoji}</span>")
             current_box.append(cur_icon)
+            self._cur_icon_label = cur_icon
 
             # Temperatura actual
             cur_temp_label = Gtk.Label()
             cur_temp_label.set_markup(
-                f"<span size='xx-large'><b>{current.temperature:.0f}°C</b></span>"
+                f"<span size='xx-large'><b>{current.temperature:.1f}°C</b></span>"
             )
             current_box.append(cur_temp_label)
+            self._cur_temp_label = cur_temp_label
 
             # Columna de detalles: sensación térmica, humedad y "Ahora"
             details_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -312,11 +569,12 @@ class DailyForecastPage(Adw.NavigationPage):
 
             feels_label = Gtk.Label()
             feels_label.set_markup(
-                f"<small>Sensación {current.feels_like:.0f}°C</small>"
+                f"<small>Sensación {current.feels_like:.1f}°C</small>"
             )
             feels_label.set_halign(Gtk.Align.START)
             feels_label.set_xalign(0)
             details_col.append(feels_label)
+            self._cur_feels_label = feels_label
 
             humidity_label = Gtk.Label()
             humidity_label.set_markup(
@@ -325,6 +583,7 @@ class DailyForecastPage(Adw.NavigationPage):
             humidity_label.set_halign(Gtk.Align.START)
             humidity_label.set_xalign(0)
             details_col.append(humidity_label)
+            self._cur_humidity_label = humidity_label
 
             cur_desc = Gtk.Label()
             cur_desc.set_markup("<small>Ahora</small>")
@@ -453,12 +712,12 @@ class DailyForecastPage(Adw.NavigationPage):
         temp_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         temp_col.set_valign(Gtk.Align.CENTER)
         temp_max_lbl = Gtk.Label()
-        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.0f}°C</b></big>")
+        temp_max_lbl.set_markup(f"<big><b>{day.temperature_max:.1f}°C</b></big>")
         temp_max_lbl.set_halign(Gtk.Align.END)
         temp_max_lbl.set_xalign(1)
         temp_col.append(temp_max_lbl)
         temp_min_lbl = Gtk.Label()
-        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.0f}°C</small>")
+        temp_min_lbl.set_markup(f"<small>{day.temperature_min:.1f}°C</small>")
         temp_min_lbl.set_halign(Gtk.Align.END)
         temp_min_lbl.set_xalign(1)
         temp_col.append(temp_min_lbl)

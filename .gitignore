@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.dist-info/
 dist/
 build/
 .venv/
@@ -31,3 +32,11 @@ Thumbs.db
 
 # Config local (contiene API key)
 config.json
+
+# Logs y temporales
+*.log
+tmp/
+
+# Github prompts
+.github/prompts
+.github/skills
