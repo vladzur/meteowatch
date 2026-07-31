@@ -204,8 +204,8 @@ class TestFilterFutureHours:
 class TestVersion:
     """Pruebas para la versión de la aplicación."""
 
-    def test_version_is_1_3_0(self):
-        assert __version__ == "1.4.0"
+    def test_version_is_1_4_1(self):
+        assert __version__ == "1.4.1"
 
     def test_version_has_three_components(self):
         parts = __version__.split(".")
@@ -220,3 +220,94 @@ class TestWeekdays:
 
     def test_first_is_monday(self):
         assert WEEKDAYS[0] == "Lunes"
+
+
+class TestBuildHourRow:
+    """Pruebas para la construcción de una fila de hora individual.
+
+    Estas pruebas usan mocks de GTK para no requerir un display, y verifican
+    que _build_hour_row no lance excepciones (regresión del NameError temp_box).
+    """
+
+    @staticmethod
+    def _make_hour() -> HourData:
+        """Crea un HourData de prueba."""
+        return HourData(
+            end=int(datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc).timestamp() * 1000),
+            precipitation=0.0,
+            night=False,
+            clouds=20,
+            symbol=1,
+            humidity=60,
+            pressure=1013,
+            wind_gust=20,
+            wind_speed=10,
+            temperature=20.0,
+            uv_index_max=3.0,
+            wind_direction=180,
+            rain_probability=5,
+            temperature_feels_like=19.0,
+        )
+
+    @staticmethod
+    def _make_page():
+        """Crea un self falso con solo los atributos que usa _build_hour_row.
+
+        _build_hour_row solo accede a self._timezone, por lo que basta un
+        SimpleNamespace sin necesidad de inicializar GTK ni un display.
+        """
+        from types import SimpleNamespace
+        return SimpleNamespace(_timezone=timezone.utc)
+
+    def test_has_build_hour_row(self):
+        """Debe existir el método _build_hour_row."""
+        assert hasattr(HourlyForecastPage, "_build_hour_row")
+        assert callable(getattr(HourlyForecastPage, "_build_hour_row"))
+
+    def test_build_hour_row_does_not_raise(self):
+        """Verifica que _build_hour_row construya la fila sin errores.
+
+        Regresión: la fila fallaba con NameError porque se usaba una variable
+        temp_box inexistente en lugar de agregar el label a center_col.
+        """
+        from unittest.mock import MagicMock, patch
+
+        hbox = MagicMock()
+        left_col = MagicMock()
+        center_col = MagicMock()
+        right_col = MagicMock()
+
+        with patch("meteowatch.widgets.hourly_panel.Gtk") as mock_gtk, \
+             patch("meteowatch.widgets.hourly_panel.get_weather_symbol") as mock_symbol:
+            mock_gtk.ListBoxRow.return_value = MagicMock()
+            mock_gtk.Box.side_effect = [hbox, left_col, center_col, right_col]
+            mock_gtk.Label.return_value = MagicMock()
+            mock_symbol.return_value = MagicMock(emoji="☀️", description="Despejado")
+
+            row = HourlyForecastPage._build_hour_row(
+                self._make_page(), self._make_hour()
+            )
+
+        # La fila debe asignar el hbox como child
+        row.set_child.assert_called_once_with(hbox)
+        # El label de temperatura debe agregarse a la columna central
+        assert center_col.append.called
+
+    def test_build_hour_row_renders_temperature(self):
+        """Verifica que el label de temperatura contenga el valor formateado."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("meteowatch.widgets.hourly_panel.Gtk") as mock_gtk, \
+             patch("meteowatch.widgets.hourly_panel.get_weather_symbol") as mock_symbol:
+            mock_gtk.ListBoxRow.return_value = MagicMock()
+            mock_gtk.Box.return_value = MagicMock()
+            label = MagicMock()
+            mock_gtk.Label.return_value = label
+            mock_symbol.return_value = MagicMock(emoji="☀️", description="Despejado")
+
+            HourlyForecastPage._build_hour_row(self._make_page(), self._make_hour())
+
+        markups = [c.args[0] for c in label.set_markup.call_args_list]
+        assert any("20.0°C" in m for m in markups), (
+            f"Ningún label contiene la temperatura esperada: {markups}"
+        )

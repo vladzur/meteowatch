@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meteowatch"
-version = "1.4.0"
+version = "1.4.1"
 description = "Aplicación GNOME de pronóstico meteorológico usando la API de Open-Meteo"
 authors = [{ name = "Meteowatch" }]
 license = { text = "GPL-3.0-only" }

@@ -14,6 +14,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
+from meteowatch import __version__
 from meteowatch.alerts import Alert, send_alerts
 from meteowatch.config import AppConfig
 from meteowatch.services.forecast import ForecastService
@@ -232,7 +233,7 @@ class MeteowatchApp(Adw.Application):
         dialog = Adw.AboutDialog()
         dialog.set_application_name("Meteowatch")
         dialog.set_application_icon("com.meteowatch.app")
-        dialog.set_version("1.4.0")
+        dialog.set_version(__version__)
         dialog.set_developer_name("vladzur")
         dialog.set_website("https://github.com/vladzur/meteowatch")
         dialog.set_copyright("© 2026 vladzur")
