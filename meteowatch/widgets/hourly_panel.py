@@ -458,7 +458,7 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         )
         temp_label.set_halign(Gtk.Align.END)
         temp_label.set_xalign(1)
-        temp_box.append(temp_label)
+        center_col.append(temp_label)
 
         feels_label = Gtk.Label()
         feels_label.set_markup(

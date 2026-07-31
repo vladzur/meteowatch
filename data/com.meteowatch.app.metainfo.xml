@@ -57,6 +57,16 @@
   </screenshots>
 
   <releases>
+    <release version="1.4.1" date="2026-07-31">
+      <description>
+        <p>Corrección de un error al abrir el pronóstico por hora.</p>
+        <ul>
+          <li>Corregido crash (NameError) al navegar al pronóstico por hora: el label de temperatura se agregaba a una variable inexistente en lugar de la columna central</li>
+          <li>Tests de regresión para la construcción de filas de horas (TestBuildHourRow)</li>
+          <li>El diálogo "Acerca de" ahora usa la versión definida en meteowatch/__init__.py para evitar desincronizaciones</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.4.0" date="2026-07-28">
       <description>
         <p>Servicio centralizado de datos y actualización automática mejorada.</p>
