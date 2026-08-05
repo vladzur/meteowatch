@@ -21,6 +21,7 @@ from meteowatch.alerts import AlertEngine, send_alerts
 from meteowatch.api.client import CurrentWeather, ForecastResult
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
+from meteowatch.report.engine import ReportEngine
 from meteowatch.services.forecast import BaseForecastObserver, ForecastService
 from meteowatch.status_notifier import StatusNotifierItem
 from meteowatch.widgets.daily_card import DailyForecastPage
@@ -52,6 +53,14 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
 
         # Motor de alertas climáticas (persiste estado de deduplicación)
         self._alert_engine = AlertEngine()
+
+        # Motor de reportes con IA (opcional, depende de DEEPSEEK_API_KEY)
+        self._report_engine: ReportEngine | None = None
+        if ReportEngine.is_available():
+            self._report_engine = ReportEngine()
+            logger.info("ReportEngine inicializado (DeepSeek disponible)")
+        else:
+            logger.info("ReportEngine no disponible (DEEPSEEK_API_KEY no configurada)")
 
         # Temporizadores de actualización periódica
         self._current_timer_id: int = 0   # cada 15 min
@@ -131,6 +140,7 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
             forecast_service=self._forecast_service,
             on_day_selected=self._on_day_selected,
             on_change_location=self._on_change_location,
+            report_engine=self._report_engine,
         )
         self._navigation.push(page)
         page.load_forecast()
@@ -320,6 +330,10 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
                 send_alerts(alerts)
         except Exception:
             logger.exception("Error al evaluar alertas en on_forecast_updated")
+
+        # Invalidar cache del reporte para que se regenere con datos frescos
+        if self._report_engine is not None:
+            self._report_engine.invalidate_cache()
 
     def on_forecast_error(self, message: str, cached: bool) -> None:
         """Registra el error de forecast (el manejo visual lo hace la UI).

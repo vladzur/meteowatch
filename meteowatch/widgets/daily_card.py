@@ -26,7 +26,10 @@ from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
 from meteowatch.models.daily import DailyForecast, DayData
 from meteowatch.models.hourly import HourlyForecast
+from meteowatch.report.engine import ReportEngine
 from meteowatch.services.forecast import BaseForecastObserver, ForecastService
+from meteowatch.widgets.report_card import WeatherReportCard
+from meteowatch.widgets.report_card import WeatherReportCard
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
     FRESHNESS_ERROR_MINUTES = 180     # >3h → naranja
 
     def __init__(self, config: AppConfig, forecast_service: ForecastService,
-                 on_day_selected, on_change_location):
+                 on_day_selected, on_change_location, report_engine=None):
         """Inicializa la página de pronóstico diario.
 
         Args:
@@ -70,6 +73,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             forecast_service: Servicio centralizado de datos meteorológicos.
             on_day_selected: Callback(location_hash, day_start_timestamp) al hacer clic en un día.
             on_change_location: Callback() para volver a la pantalla de búsqueda.
+            report_engine: Motor de reportes con IA (opcional, ReportEngine o None).
         """
         super().__init__()
         self.set_title(config.location_name or "Meteowatch")
@@ -77,6 +81,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._forecast_service = forecast_service
         self._on_day_selected = on_day_selected
         self._on_change_location = on_change_location
+        self._report_engine: ReportEngine | None = report_engine
         self._forecast: Optional[DailyForecast] = None
         self._current: Optional[CurrentWeather] = None
         self._hourly: Optional[HourlyForecast] = None
@@ -202,6 +207,13 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._freshness_label.set_markup("<small>🕐 Cargando…</small>")
         self._main_box.append(self._freshness_label)
 
+        # --- Widget de reporte meteorológico con IA ---
+        self._report_card: WeatherReportCard | None = None
+        if self._report_engine is not None:
+            self._report_card = WeatherReportCard(self._report_engine)
+            self._main_box.append(self._report_card)
+            logger.debug("WeatherReportCard agregado a la UI")
+
     def load_forecast(self) -> None:
         """Solicita el pronóstico al ForecastService.
 
@@ -215,13 +227,14 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._error_label.set_visible(False)
         self._is_offline = False
 
-        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner y freshness)
+        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner, freshness y report_card)
         children_to_remove = []
         for child in self._main_box:
             if (child is not self._spinner
                     and child is not self._error_label
                     and child is not self._alert_banner
-                    and child is not self._freshness_label):
+                    and child is not self._freshness_label
+                    and child is not self._report_card):
                 children_to_remove.append(child)
 
         for child in children_to_remove:
@@ -234,6 +247,11 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             self._current = cached.current
             self._hourly = cached.hourly
             self._on_forecast_loaded(cached.daily, cached.current)
+            # Actualizar report card con datos cacheados
+            if self._report_card is not None and cached.hourly is not None:
+                self._report_card.set_forecast_data(
+                    cached.daily, cached.hourly, cached.current
+                )
             # Iniciar indicador de frescura
             self._start_freshness_timer()
             # Si los datos están frescos, ocultar spinner
@@ -293,6 +311,12 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         # Iniciar timer de frescura si no estaba activo
         self._start_freshness_timer()
+
+        # Actualizar datos del report card si existe
+        if self._report_card is not None and new_hourly is not None:
+            self._report_card.set_forecast_data(
+                new_forecast, new_hourly, new_current
+            )
 
     def on_current_updated(self, current: CurrentWeather) -> None:
         """Actualiza la tarjeta de condiciones actuales sin reconstruir todo.
@@ -405,13 +429,14 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._cur_feels_label = None
         self._cur_humidity_label = None
 
-        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner y freshness)
+        # Limpiar widgets de forecast anteriores (excepto spinner, error, banner, freshness y report_card)
         children_to_remove = []
         for child in self._main_box:
             if (child is not self._spinner
                     and child is not self._error_label
                     and child is not self._alert_banner
-                    and child is not self._freshness_label):
+                    and child is not self._freshness_label
+                    and child is not self._report_card):
                 children_to_remove.append(child)
 
         for child in children_to_remove:
