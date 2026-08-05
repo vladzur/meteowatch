@@ -298,3 +298,65 @@ class TestHasHourlyChanged:
             end=1700000000000, rain_probability=90
         )
         assert page._has_hourly_changed(new_forecast) is True
+
+
+# ==================================================================
+# WeatherReportCard — integración
+# ==================================================================
+
+class TestWeatherReportCardIntegration:
+    """Verifica que el WeatherReportCard se integre correctamente."""
+
+    def test_module_imports_cleanly(self):
+        """El módulo report_card debe importarse sin errores circulares."""
+        import meteowatch.widgets.report_card  # noqa: F401
+
+    def test_class_exists(self):
+        """La clase WeatherReportCard debe existir."""
+        from meteowatch.widgets.report_card import WeatherReportCard
+        assert WeatherReportCard is not None
+
+    def test_has_required_methods(self):
+        """Debe tener los métodos requeridos por la spec."""
+        from meteowatch.widgets.report_card import WeatherReportCard
+
+        required = [
+            "set_forecast_data",
+            "_build_ui",
+            "_on_generate_clicked",
+            "_set_loading_state",
+            "_do_generate",
+            "_on_report_ready",
+            "_enable_generate_button",
+        ]
+        for method in required:
+            assert hasattr(WeatherReportCard, method), \
+                f"Falta el método {method}"
+            assert callable(getattr(WeatherReportCard, method)), \
+                f"{method} no es callable"
+
+    def test_cooldown_constant(self):
+        """COOLDOWN_SECONDS debe ser positivo."""
+        from meteowatch.widgets.report_card import COOLDOWN_SECONDS
+        assert COOLDOWN_SECONDS > 0
+
+    def test_report_engine_integration(self, monkeypatch):
+        """ReportEngine.is_available debe funcionar correctamente."""
+        from meteowatch.report.engine import ReportEngine
+
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        assert ReportEngine.is_available() is False
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        assert ReportEngine.is_available() is True
+
+
+class TestDailyForecastReportIntegration:
+    """Verifica que DailyForecastPage acepte el parámetro report_engine."""
+
+    def test_init_accepts_report_engine(self):
+        """El constructor de DailyForecastPage debe aceptar report_engine."""
+        import inspect
+        sig = inspect.signature(DailyForecastPage.__init__)
+        params = list(sig.parameters.keys())
+        assert "report_engine" in params

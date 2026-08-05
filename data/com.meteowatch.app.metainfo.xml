@@ -57,6 +57,19 @@
   </screenshots>
 
   <releases>
+    <release version="1.5.0" date="2026-08-04">
+      <description>
+        <p>Reporte del tiempo con inteligencia artificial.</p>
+        <ul>
+          <li>Nuevo motor de reportes meteorológicos narrativos usando DeepSeek (módulo meteowatch/report/)</li>
+          <li>El reporte analiza los datos del pronóstico (diario, horario y actual) y genera un informe textual amigable en español neutro</li>
+          <li>Diálogo modal con el reporte completo, botón Copiar al portapapeles y botón Cerrar</li>
+          <li>Configuración opcional mediante variable de entorno DEEPSEEK_API_KEY</li>
+          <li>Cache del reporte alineado con el TTL del pronóstico para minimizar llamadas a la API</li>
+          <li>Funcionalidad completamente opcional: si no hay API key configurada, la sección no aparece</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.4.1" date="2026-07-31">
       <description>
         <p>Corrección de un error al abrir el pronóstico por hora.</p>

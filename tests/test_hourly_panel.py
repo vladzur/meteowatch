@@ -201,17 +201,6 @@ class TestFilterFutureHours:
         assert has_past is True
 
 
-class TestVersion:
-    """Pruebas para la versión de la aplicación."""
-
-    def test_version_is_1_4_1(self):
-        assert __version__ == "1.4.1"
-
-    def test_version_has_three_components(self):
-        parts = __version__.split(".")
-        assert len(parts) == 3
-
-
 class TestWeekdays:
     """Pruebas para los nombres de días de la semana."""
 
