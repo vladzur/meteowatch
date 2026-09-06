@@ -7,12 +7,13 @@ Proporciona:
 """
 
 from meteowatch.alerts.engine import AlertEngine
-from meteowatch.alerts.rules import Alert
+from meteowatch.alerts.rules import Alert, get_hour_alerts
 from meteowatch.alerts.notifier import send_alert_notification, send_alerts
 
 __all__ = [
     "Alert",
     "AlertEngine",
+    "get_hour_alerts",
     "send_alert_notification",
     "send_alerts",
 ]

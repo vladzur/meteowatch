@@ -25,6 +25,7 @@ from meteowatch.alerts.rules import (
     CATEGORY_DAILY_RAIN,
     CATEGORY_FROST,
     CATEGORY_HEAT,
+    get_hour_alerts,
 )
 from meteowatch.models.daily import DailyForecast, DayData
 from meteowatch.models.hourly import HourlyForecast, HourData
@@ -638,6 +639,85 @@ class TestAlertRules:
         assert alert.message == "Test message"
         assert alert.source_code == 95
         assert alert.value is None
+
+
+# ------------------------------------------------------------------
+# Tests: reglas unificadas por hora (get_hour_alerts)
+# ------------------------------------------------------------------
+
+class TestGetHourAlerts:
+    """Pruebas para la función pura get_hour_alerts."""
+
+    def test_benign_hour_no_alerts(self):
+        """Una hora sin condiciones de alerta retorna lista vacía."""
+        hour = _make_hour_data(symbol=0, wind_gust=10.0, precipitation=0.0,
+                               feels_like=20.0)
+        assert get_hour_alerts(hour) == []
+
+    def test_wmo_code_triggers_alert(self):
+        """Un código WMO de alerta retorna la alerta correspondiente."""
+        hour = _make_hour_data(symbol=95)
+        alerts = get_hour_alerts(hour)
+        assert len(alerts) == 1
+        assert alerts[0].category == CATEGORY_THUNDERSTORM
+        assert alerts[0].level == "orange"
+        assert alerts[0].source_code == 95
+
+    def test_wind_yellow_alert(self):
+        """Ráfagas sobre el umbral amarillo retornan alerta de viento amarilla."""
+        gust = WIND_GUST_YELLOW + 5
+        hour = _make_hour_data(wind_gust=gust)
+        alerts = get_hour_alerts(hour)
+        wind = [a for a in alerts if a.category == CATEGORY_WIND]
+        assert len(wind) == 1
+        assert wind[0].level == "yellow"
+        assert wind[0].value == gust
+
+    def test_wind_orange_alert(self):
+        """Ráfagas sobre el umbral naranja retornan alerta de viento naranja."""
+        hour = _make_hour_data(wind_gust=WIND_GUST_ORANGE + 5)
+        alerts = get_hour_alerts(hour)
+        wind = [a for a in alerts if a.category == CATEGORY_WIND]
+        assert len(wind) == 1
+        assert wind[0].level == "orange"
+
+    def test_flash_flood_alert(self):
+        """Precipitación torrencial retorna alerta de inundación."""
+        hour = _make_hour_data(precipitation=FLASH_FLOOD_ORANGE + 5)
+        alerts = get_hour_alerts(hour)
+        flood = [a for a in alerts if a.category == CATEGORY_FLASH_FLOOD]
+        assert len(flood) == 1
+        assert flood[0].level == "orange"
+
+    def test_frost_alert(self):
+        """Sensación bajo cero retorna alerta de helada."""
+        hour = _make_hour_data(feels_like=-2.0)
+        alerts = get_hour_alerts(hour)
+        frost = [a for a in alerts if a.category == CATEGORY_FROST]
+        assert len(frost) == 1
+        assert frost[0].level == "yellow"
+
+    def test_heat_alert(self):
+        """Sensación sobre 35°C retorna alerta de calor."""
+        hour = _make_hour_data(feels_like=38.0)
+        alerts = get_hour_alerts(hour)
+        heat = [a for a in alerts if a.category == CATEGORY_HEAT]
+        assert len(heat) == 1
+        assert heat[0].level == "yellow"
+
+    def test_multiple_alerts_same_hour(self):
+        """Una hora con varias condiciones retorna todas las alertas."""
+        hour = _make_hour_data(
+            symbol=95,
+            wind_gust=WIND_GUST_ORANGE + 5,
+            precipitation=FLASH_FLOOD_ORANGE + 5,
+            feels_like=-3.0,
+        )
+        categories = {a.category for a in get_hour_alerts(hour)}
+        assert CATEGORY_THUNDERSTORM in categories
+        assert CATEGORY_WIND in categories
+        assert CATEGORY_FLASH_FLOOD in categories
+        assert CATEGORY_FROST in categories
 
     def test_thresholds_are_positive(self):
         """Todos los umbrales deben ser valores positivos."""

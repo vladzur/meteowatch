@@ -20,6 +20,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
+from meteowatch.alerts import Alert, get_hour_alerts
+from meteowatch.alerts.rules import CATEGORY_WIND
 from meteowatch.api.client import ForecastResult, OpenMeteoError
 from meteowatch.config import AppConfig
 from meteowatch.icons import get_weather_symbol
@@ -39,6 +41,35 @@ def _degrees_to_cardinal(degrees: int) -> str:
     directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     index = round(degrees / 45) % 8
     return directions[index]
+
+
+def _alert_icon(alerts: list[Alert]) -> Optional[str]:
+    """Devuelve el emoji de alerta según el nivel más grave, o None.
+
+    Args:
+        alerts: Alertas activas para una hora determinada.
+
+    Returns:
+        '🔴' si hay alguna alerta naranja, '⚠️' si solo hay amarillas,
+        o None si no hay alertas.
+    """
+    if not alerts:
+        return None
+    if any(a.level == "orange" for a in alerts):
+        return "🔴"
+    return "⚠️"
+
+
+def _alert_tooltip(alerts: list[Alert]) -> str:
+    """Devuelve el texto del tooltip con los mensajes de las alertas.
+
+    Args:
+        alerts: Alertas activas para una hora determinada.
+
+    Returns:
+        Mensajes de alerta unidos por saltos de línea.
+    """
+    return "\n".join(a.message for a in alerts)
 
 
 class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
@@ -416,6 +447,10 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         row = Gtk.ListBoxRow()
         row.set_activatable(False)
 
+        # Alertas activas para esta hora (fuente única de verdad)
+        hour_alerts = get_hour_alerts(hour_data)
+        alert_icon = _alert_icon(hour_alerts)
+
         # Contenedor horizontal principal
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         hbox.set_margin_start(12)
@@ -423,17 +458,15 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         hbox.set_margin_top(8)
         hbox.set_margin_bottom(8)
 
-        # --- Columna izquierda: hora + icono + alerta ráfagas ---
+        # --- Columna izquierda: hora + icono + indicador de alerta ---
         left_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         left_col.set_valign(Gtk.Align.CENTER)
 
-        # Indicador de alerta de viento
-        gust_alert = hour_data.wind_gust >= 50
-
         hour_str = datetime.fromtimestamp(hour_data.end / 1000, tz=self._timezone).strftime("%H:%M")
         hour_label = Gtk.Label()
-        if gust_alert:
-            hour_label.set_markup(f"<b>⚠️ {hour_str}</b>")
+        if alert_icon:
+            hour_label.set_markup(f"<b>{alert_icon} {hour_str}</b>")
+            hour_label.set_tooltip_text(_alert_tooltip(hour_alerts))
         else:
             hour_label.set_markup(f"<b>{hour_str}</b>")
         hour_label.set_halign(Gtk.Align.CENTER)
@@ -480,9 +513,9 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         right_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
         right_col.set_valign(Gtk.Align.CENTER)
 
-        # Viento: velocidad base + ráfagas con alerta si > 50 km/h
-        gust_alert = hour_data.wind_gust >= 50
-        if gust_alert:
+        # Viento: velocidad base + ráfagas con alerta de viento
+        wind_alert = any(a.category == CATEGORY_WIND for a in hour_alerts)
+        if wind_alert:
             wind_text = f"💨 {hour_data.wind_speed} km/h"
             gust_text = f"⚠️ Ráfagas {hour_data.wind_gust} km/h"
         else:
@@ -493,7 +526,7 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             (f"💧 {hour_data.humidity}%", False),
             (f"🌧️ {hour_data.rain_probability}%", False),
             (wind_text, False),
-            (gust_text, gust_alert),
+            (gust_text, wind_alert),
             (f"☁️ {hour_data.clouds}%", False),
         ]
         for text, is_alert in details:
