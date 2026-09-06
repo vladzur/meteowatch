@@ -4,7 +4,10 @@ Las reglas están separadas de la lógica de evaluación para facilitar
 su mantenimiento y posible externalización futura a un archivo de configuración.
 """
 
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from meteowatch.models.hourly import HourData
 
 
 class Alert(NamedTuple):
@@ -93,3 +96,105 @@ WMO_CATEGORY_MAP: dict[int, str] = {
     65: CATEGORY_HEAVY_RAIN,
     75: CATEGORY_HEAVY_SNOW,
 }
+
+
+def get_hour_alerts(hour: "HourData") -> list[Alert]:
+    """Evalúa una única hora contra todas las reglas de alerta horarias.
+
+    Es la fuente única de verdad para las reglas por hora: tanto el
+    AlertEngine (notificaciones/banner) como el desglose por hora usan
+    esta función, evitando umbrales duplicados en otros componentes.
+
+    Args:
+        hour: Datos meteorológicos de una hora del pronóstico.
+
+    Returns:
+        Lista de alertas aplicables a esa hora (puede estar vacía).
+    """
+    alerts: list[Alert] = []
+
+    # Códigos WMO de alerta
+    code = hour.symbol
+    if code in WMO_ORANGE_CODES:
+        alerts.append(Alert(
+            level="orange",
+            category=WMO_CATEGORY_MAP.get(code, "unknown_wmo"),
+            message=WMO_ORANGE_CODES[code],
+            source_code=code,
+            value=None,
+        ))
+    elif code in WMO_YELLOW_CODES:
+        alerts.append(Alert(
+            level="yellow",
+            category=WMO_CATEGORY_MAP.get(code, "unknown_wmo"),
+            message=WMO_YELLOW_CODES[code],
+            source_code=code,
+            value=None,
+        ))
+
+    # Ráfagas de viento
+    if hour.wind_gust > WIND_GUST_ORANGE:
+        alerts.append(Alert(
+            level="orange",
+            category=CATEGORY_WIND,
+            message=(
+                f"Ráfagas de viento extremas detectadas "
+                f"({hour.wind_gust:.0f} km/h). Riesgo de caída de objetos y árboles."
+            ),
+            source_code=None,
+            value=hour.wind_gust,
+        ))
+    elif hour.wind_gust > WIND_GUST_YELLOW:
+        alerts.append(Alert(
+            level="yellow",
+            category=CATEGORY_WIND,
+            message=(
+                f"Ráfagas de viento fuertes previstas "
+                f"({hour.wind_gust:.0f} km/h). Precaución en exteriores."
+            ),
+            source_code=None,
+            value=hour.wind_gust,
+        ))
+
+    # Inundación repentina
+    if hour.precipitation > FLASH_FLOOD_ORANGE:
+        alerts.append(Alert(
+            level="orange",
+            category=CATEGORY_FLASH_FLOOD,
+            message=(
+                f"Lluvia torrencial detectada "
+                f"({hour.precipitation:.1f} mm/h). "
+                f"Riesgo de inundación repentina. Evita zonas bajas."
+            ),
+            source_code=None,
+            value=hour.precipitation,
+        ))
+
+    # Temperatura peligrosa (heladas y calor extremo)
+    feels = hour.temperature_feels_like
+    if feels < FROST_YELLOW:
+        alerts.append(Alert(
+            level="yellow",
+            category=CATEGORY_FROST,
+            message=(
+                f"Temperatura bajo cero detectada "
+                f"(sensación {feels:.0f}°C). "
+                f"Riesgo de heladas. Precaución en carreteras."
+            ),
+            source_code=None,
+            value=feels,
+        ))
+    if feels > HEAT_YELLOW:
+        alerts.append(Alert(
+            level="yellow",
+            category=CATEGORY_HEAT,
+            message=(
+                f"Temperatura extrema detectada "
+                f"(sensación {feels:.0f}°C). "
+                f"Hidrátate y evita exposición prolongada al sol."
+            ),
+            source_code=None,
+            value=feels,
+        ))
+
+    return alerts

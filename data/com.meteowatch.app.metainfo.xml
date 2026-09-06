@@ -23,8 +23,8 @@
       <li>Búsqueda de ubicaciones por nombre de ciudad</li>
       <li>Icono en bandeja del sistema con temperatura actual</li>
       <li>Códigos meteorológicos WMO oficiales (cobertura completa)</li>
-      <li>Alertas de ráfagas de viento ≥ 50 km/h</li>
-      <li>Motor de alertas climáticas con notificaciones de escritorio (tormentas, lluvia helada, viento, temperaturas extremas)</li>
+      <li>Alertas climáticas por hora con indicador visual (viento, tormentas, lluvia, temperaturas extremas)</li>
+      <li>Motor de alertas climáticas unificado con notificaciones de escritorio</li>
       <li>Datos de amanecer, atardecer, precipitación e índice UV</li>
       <li>Atribución a Open-Meteo y diálogo "Acerca de"</li>
       <li>Cambio de ubicación accesible desde cualquier pantalla</li>
@@ -57,6 +57,16 @@
   </screenshots>
 
   <releases>
+    <release version="1.6.0" date="2026-09-06">
+      <description>
+        <p>Alertas climáticas unificadas en el pronóstico por hora.</p>
+        <ul>
+          <li>Nueva fuente única de reglas de alerta por hora</li>
+          <li>El desglose por hora muestra un indicador de alerta (icono + tooltip) para viento, tormentas, lluvia torrencial, heladas y calor</li>
+          <li>Se elimina la comprobación duplicada de ráfagas de viento</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5.0" date="2026-08-04">
       <description>
         <p>Reporte del tiempo con inteligencia artificial.</p>

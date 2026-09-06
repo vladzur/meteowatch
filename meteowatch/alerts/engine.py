@@ -12,22 +12,12 @@ import time
 
 from meteowatch.alerts.rules import (
     Alert,
-    WMO_ORANGE_CODES,
-    WMO_YELLOW_CODES,
-    WMO_CATEGORY_MAP,
-    WIND_GUST_YELLOW,
-    WIND_GUST_ORANGE,
-    FLASH_FLOOD_ORANGE,
-    DAILY_RAIN_YELLOW,
-    FROST_YELLOW,
-    HEAT_YELLOW,
-    HOURS_WINDOW,
-    FLASH_FLOOD_WINDOW,
-    CATEGORY_WIND,
-    CATEGORY_FLASH_FLOOD,
     CATEGORY_DAILY_RAIN,
-    CATEGORY_FROST,
-    CATEGORY_HEAT,
+    CATEGORY_FLASH_FLOOD,
+    DAILY_RAIN_YELLOW,
+    FLASH_FLOOD_WINDOW,
+    HOURS_WINDOW,
+    get_hour_alerts,
 )
 from meteowatch.models.daily import DailyForecast
 from meteowatch.models.hourly import HourlyForecast
@@ -68,10 +58,10 @@ class AlertEngine:
 
         alerts: list[Alert] = []
 
-        alerts.extend(self._check_wmo_codes(hourly))
-        alerts.extend(self._check_wind_gusts(hourly))
-        alerts.extend(self._check_flash_flood(hourly))
-        alerts.extend(self._check_temperature(hourly))
+        # Alertas horarias en ventana general (excluye inundación)
+        alerts.extend(self._check_hourly(hourly, HOURS_WINDOW, False))
+        # Inundación repentina en su ventana propia
+        alerts.extend(self._check_hourly(hourly, FLASH_FLOOD_WINDOW, True))
 
         if daily and daily.days:
             alerts.extend(self._check_daily_rain(daily))
@@ -91,96 +81,26 @@ class AlertEngine:
     # Checks individuales
     # ------------------------------------------------------------------
 
-    def _check_wmo_codes(self, hourly: HourlyForecast) -> list[Alert]:
-        """Evalúa códigos WMO en las horas del horizonte de evaluación.
+    def _check_hourly(self, hourly: HourlyForecast, window: int,
+                      include_flash_flood: bool) -> list[Alert]:
+        """Recoge alertas horarias de la fuente unificada en una ventana.
 
-        Busca en las primeras HOURS_WINDOW horas del pronóstico.
+        Args:
+            hourly: Pronóstico por hora.
+            window: Cantidad de horas a evaluar desde el inicio.
+            include_flash_flood: Si True, solo incluye alertas de inundación;
+                si False, las excluye.
+
+        Returns:
+            Alertas horarias detectadas dentro de la ventana.
         """
         alerts: list[Alert] = []
-        check_hours = hourly.hours[:HOURS_WINDOW]
-
-        for hour in check_hours:
-            code = hour.symbol
-
-            if code in WMO_ORANGE_CODES:
-                alerts.append(Alert(
-                    level="orange",
-                    category=WMO_CATEGORY_MAP.get(code, "unknown_wmo"),
-                    message=WMO_ORANGE_CODES[code],
-                    source_code=code,
-                    value=None,
-                ))
-            elif code in WMO_YELLOW_CODES:
-                alerts.append(Alert(
-                    level="yellow",
-                    category=WMO_CATEGORY_MAP.get(code, "unknown_wmo"),
-                    message=WMO_YELLOW_CODES[code],
-                    source_code=code,
-                    value=None,
-                ))
-
+        for hour in hourly.hours[:window]:
+            for alert in get_hour_alerts(hour):
+                is_flash_flood = alert.category == CATEGORY_FLASH_FLOOD
+                if is_flash_flood == include_flash_flood:
+                    alerts.append(alert)
         return alerts
-
-    def _check_wind_gusts(self, hourly: HourlyForecast) -> list[Alert]:
-        """Evalúa ráfagas de viento contra los umbrales configurados.
-
-        Toma el valor máximo en la ventana de evaluación para determinar
-        el nivel de alerta.
-        """
-        check_hours = hourly.hours[:HOURS_WINDOW]
-        if not check_hours:
-            return []
-
-        max_gust = max(h.wind_gust for h in check_hours)
-
-        if max_gust > WIND_GUST_ORANGE:
-            return [Alert(
-                level="orange",
-                category=CATEGORY_WIND,
-                message=(
-                    f"Ráfagas de viento extremas detectadas "
-                    f"({max_gust:.0f} km/h). Riesgo de caída de objetos y árboles."
-                ),
-                source_code=None,
-                value=max_gust,
-            )]
-        elif max_gust > WIND_GUST_YELLOW:
-            return [Alert(
-                level="yellow",
-                category=CATEGORY_WIND,
-                message=(
-                    f"Ráfagas de viento fuertes previstas "
-                    f"({max_gust:.0f} km/h). Precaución en exteriores."
-                ),
-                source_code=None,
-                value=max_gust,
-            )]
-
-        return []
-
-    def _check_flash_flood(self, hourly: HourlyForecast) -> list[Alert]:
-        """Evalúa riesgo de inundación repentina por lluvia intensa.
-
-        Verifica si alguna de las próximas FLASH_FLOOD_WINDOW horas
-        supera el umbral de precipitación.
-        """
-        check_hours = hourly.hours[:FLASH_FLOOD_WINDOW]
-
-        for hour in check_hours:
-            if hour.precipitation > FLASH_FLOOD_ORANGE:
-                return [Alert(
-                    level="orange",
-                    category=CATEGORY_FLASH_FLOOD,
-                    message=(
-                        f"Lluvia torrencial detectada "
-                        f"({hour.precipitation:.1f} mm/h). "
-                        f"Riesgo de inundación repentina. Evita zonas bajas."
-                    ),
-                    source_code=None,
-                    value=hour.precipitation,
-                )]
-
-        return []
 
     def _check_daily_rain(self, daily: DailyForecast) -> list[Alert]:
         """Evalúa acumulación diaria de lluvia."""
@@ -202,54 +122,6 @@ class AlertEngine:
             )]
 
         return []
-
-    def _check_temperature(self, hourly: HourlyForecast) -> list[Alert]:
-        """Evalúa temperaturas peligrosas (heladas y calor extremo).
-
-        Usa la sensación térmica (apparent_temperature) que incluye
-        el efecto del viento y la humedad.
-        """
-        check_hours = hourly.hours[:HOURS_WINDOW]
-        if not check_hours:
-            return []
-
-        alerts: list[Alert] = []
-
-        for hour in check_hours:
-            feels = hour.temperature_feels_like
-
-            if feels < FROST_YELLOW:
-                alerts.append(Alert(
-                    level="yellow",
-                    category=CATEGORY_FROST,
-                    message=(
-                        f"Temperatura bajo cero detectada "
-                        f"(sensación {feels:.0f}°C). "
-                        f"Riesgo de heladas. Precaución en carreteras."
-                    ),
-                    source_code=None,
-                    value=feels,
-                ))
-                break  # Una alerta por helada es suficiente
-
-        for hour in check_hours:
-            feels = hour.temperature_feels_like
-
-            if feels > HEAT_YELLOW:
-                alerts.append(Alert(
-                    level="yellow",
-                    category=CATEGORY_HEAT,
-                    message=(
-                        f"Temperatura extrema detectada "
-                        f"(sensación {feels:.0f}°C). "
-                        f"Hidrátate y evita exposición prolongada al sol."
-                    ),
-                    source_code=None,
-                    value=feels,
-                ))
-                break  # Una alerta por calor es suficiente
-
-        return alerts
 
     # ------------------------------------------------------------------
     # Deduplicación

@@ -6,8 +6,15 @@ from datetime import datetime, timezone
 import pytest
 
 from meteowatch import __version__
+from meteowatch.alerts.rules import Alert
 from meteowatch.models.hourly import HourData
-from meteowatch.widgets.hourly_panel import WEEKDAYS, _degrees_to_cardinal, HourlyForecastPage
+from meteowatch.widgets.hourly_panel import (
+    WEEKDAYS,
+    _alert_icon,
+    _alert_tooltip,
+    _degrees_to_cardinal,
+    HourlyForecastPage,
+)
 
 
 class TestDegreesToCardinal:
@@ -300,3 +307,44 @@ class TestBuildHourRow:
         assert any("20.0°C" in m for m in markups), (
             f"Ningún label contiene la temperatura esperada: {markups}"
         )
+
+
+class TestAlertHelpers:
+    """Pruebas para los helpers puros de icono y tooltip de alertas."""
+
+    @staticmethod
+    def _make_alert(level="yellow", message="Alerta de prueba",
+                    category="wind"):
+        """Crea una alerta de prueba."""
+        return Alert(
+            level=level, category=category, message=message,
+            source_code=None, value=None,
+        )
+
+    def test_icon_none_without_alerts(self):
+        """Sin alertas, el icono debe ser None."""
+        assert _alert_icon([]) is None
+
+    def test_icon_yellow(self):
+        """Con alerta amarilla, el icono es el warning."""
+        assert _alert_icon([self._make_alert(level="yellow")]) == "⚠️"
+
+    def test_icon_orange_dominates(self):
+        """La alerta naranja domina sobre la amarilla."""
+        alerts = [
+            self._make_alert(level="yellow"),
+            self._make_alert(level="orange"),
+        ]
+        assert _alert_icon(alerts) == "🔴"
+
+    def test_tooltip_joins_messages(self):
+        """El tooltip une los mensajes con saltos de línea."""
+        alerts = [
+            self._make_alert(message="Primera alerta"),
+            self._make_alert(message="Segunda alerta"),
+        ]
+        assert _alert_tooltip(alerts) == "Primera alerta\nSegunda alerta"
+
+    def test_tooltip_empty(self):
+        """Sin alertas, el tooltip es una cadena vacía."""
+        assert _alert_tooltip([]) == ""
