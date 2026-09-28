@@ -29,7 +29,6 @@ from meteowatch.models.hourly import HourlyForecast
 from meteowatch.report.engine import ReportEngine
 from meteowatch.services.forecast import BaseForecastObserver, ForecastService
 from meteowatch.widgets.report_card import WeatherReportCard
-from meteowatch.widgets.report_card import WeatherReportCard
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +130,11 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         menu_model = Gio.Menu()
 
+        # Sección: preferencias
+        prefs_section = Gio.Menu()
+        prefs_section.append("Preferencias", "app.preferences")
+        menu_model.append_section(None, prefs_section)
+
         # Sección: ayuda e información
         info_section = Gio.Menu()
         info_section.append("Ayuda", "app.help")
@@ -209,7 +213,7 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         # --- Widget de reporte meteorológico con IA ---
         self._report_card: WeatherReportCard | None = None
-        if self._report_engine is not None:
+        if self._report_engine is not None and self._report_engine.is_available():
             self._report_card = WeatherReportCard(self._report_engine)
             self._main_box.append(self._report_card)
             logger.debug("WeatherReportCard agregado a la UI")
@@ -540,14 +544,42 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
     # Navegación
     # ------------------------------------------------------------------
 
-    def _on_24h_clicked(self, button: Gtk.Button) -> None:
-        """Navega al pronóstico detallado de las próximas 24 horas."""
-        if self._forecast and self._forecast.days:
-            today = self._forecast.days[0]
-            logger.info("Navegando a pronóstico 24h")
+    def _on_day_clicked(self, button: Gtk.Button, day_start: int) -> None:
+        """Navega al pronóstico por hora del día seleccionado.
+
+        Args:
+            button: Botón de la tarjeta que recibió el clic.
+            day_start: Timestamp de inicio del día seleccionado (ms).
+        """
+        if self._forecast is not None:
+            logger.info("Navegando al pronóstico por hora del día %s", day_start)
             # Usar lat/lon como identificador para mantener compatibilidad con la interfaz
             location_id = f"{self._forecast.latitude},{self._forecast.longitude}"
-            self._on_day_selected(location_id, today.start)
+            self._on_day_selected(location_id, day_start)
+
+    def set_report_engine(self, engine: ReportEngine | None) -> None:
+        """Actualiza el motor de reportes y reconstruye la tarjeta de IA.
+
+        Args:
+            engine: Nueva instancia de ReportEngine (o None para deshabilitar).
+        """
+        self._report_engine = engine
+
+        # Remover la tarjeta actual si existe
+        if self._report_card is not None:
+            self._main_box.remove(self._report_card)
+            self._report_card = None
+
+        # Recrear la tarjeta si el motor está disponible
+        if self._report_engine is not None and self._report_engine.is_available():
+            self._report_card = WeatherReportCard(self._report_engine)
+            self._main_box.insert_child_after(self._freshness_label, self._report_card)
+            if (self._forecast is not None and self._hourly is not None
+                    and self._current is not None):
+                self._report_card.set_forecast_data(
+                    self._forecast, self._hourly, self._current
+                )
+            logger.debug("WeatherReportCard actualizado en la UI")
 
     def _build_forecast_card(self, forecast: DailyForecast,
                              current: Optional[CurrentWeather] = None) -> None:
@@ -622,34 +654,31 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         self._main_box.append(header_box)
 
-        # --- Botón de pronóstico 24 horas (destacado) ---
-        btn_24h = Gtk.Button()
-        btn_24h.set_margin_bottom(8)
-        btn_24h.add_css_class("suggested-action")
+        # --- Grilla de tarjetas de día (2 columnas, "Hoy" ocupa ambas) ---
+        grid = Gtk.Grid()
+        grid.set_column_spacing(10)
+        grid.set_row_spacing(10)
+        grid.set_column_homogeneous(True)
 
-        btn_content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        btn_content.set_margin_top(6)
-        btn_content.set_margin_bottom(6)
-        btn_icon = Gtk.Label()
-        btn_icon.set_markup("<span size='large'>🕐</span>")
-        btn_content.append(btn_icon)
-        btn_label = Gtk.Label()
-        btn_label.set_markup("<b>Ver pronóstico de las próximas 24 horas</b>")
-        btn_label.set_halign(Gtk.Align.START)
-        btn_label.set_xalign(0)
-        btn_label.set_hexpand(True)
-        btn_content.append(btn_label)
-        btn_arrow = Gtk.Image()
-        btn_arrow.set_from_icon_name("go-next-symbolic")
-        btn_content.append(btn_arrow)
-        btn_24h.set_child(btn_content)
-        btn_24h.connect("clicked", self._on_24h_clicked)
-        self._main_box.append(btn_24h)
-
-        # --- Tarjetas de cada día ---
         for i, day in enumerate(forecast.days):
             card = self._build_day_card(day, i)
-            self._main_box.append(card)
+
+            # Envolver la tarjeta en un botón plano para hacerla clicable
+            card_btn = Gtk.Button()
+            card_btn.set_child(card)
+            card_btn.add_css_class("card-button")
+            card_btn.set_hexpand(True)
+            card_btn.connect("clicked", self._on_day_clicked, day.start)
+
+            if i == 0:
+                # "Hoy" ocupa ambas columnas de la grilla
+                grid.attach(card_btn, 0, 0, 2, 1)
+            else:
+                col = (i - 1) % 2
+                row = 1 + (i - 1) // 2
+                grid.attach(card_btn, col, row, 1, 1)
+
+        self._main_box.append(grid)
 
         # --- Atribución a Open-Meteo (requerido por los términos de uso) ---
         attribution_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -698,7 +727,8 @@ class DailyForecastPage(Adw.NavigationPage, BaseForecastObserver):
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         card.add_css_class("card")
-        card.set_margin_bottom(10)
+        if index == 0:
+            card.add_css_class("today-card")
 
         # --- Fila superior: icono grande + día/fecha/descripción + temps ---
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)

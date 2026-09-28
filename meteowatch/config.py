@@ -23,6 +23,7 @@ class AppConfig:
     location_name: str = ""
     timezone: str = "auto"
     close_to_tray: bool = True
+    deepseek_api_key: str = ""
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -43,6 +44,7 @@ class AppConfig:
                 location_name=data.get("location_name", ""),
                 timezone=data.get("timezone", "auto"),
                 close_to_tray=data.get("close_to_tray", True),
+                deepseek_api_key=data.get("deepseek_api_key", ""),
             )
         except (json.JSONDecodeError, OSError):
             return cls()
@@ -60,6 +62,7 @@ class AppConfig:
             "location_name": self.location_name,
             "timezone": self.timezone,
             "close_to_tray": self.close_to_tray,
+            "deepseek_api_key": self.deepseek_api_key,
         }
 
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:

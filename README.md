@@ -9,14 +9,16 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
 ## ✨ Funcionalidades
 
 - **Búsqueda de ubicaciones** por nombre de ciudad
-- **Pronóstico diario** de 5 días con tarjetas detalladas:
+- **Pronóstico diario** de 5 días en una grilla con tarjetas detalladas:
   - Temperaturas máximas y mínimas
   - Condición climática con icono (códigos WMO oficiales)
   - Humedad, probabilidad de lluvia, viento y ráfagas
   - Amanecer, atardecer, precipitación e índice UV
+  - "Hoy" destacado en una tarjeta de ancho completo
 - **Temperatura actual** obtenida del endpoint de condiciones actuales
-- **Pronóstico por hora** de las próximas 24 horas con navegación de retroceso integrada
+- **Pronóstico por hora** del día seleccionado al hacer clic en una tarjeta
 - **Alerta de ráfagas de viento** ≥ 50 km/h (⚠️ en la UI)
+- **Reporte con IA** generado con DeepSeek (llave configurable en Preferencias)
 - **Icono en bandeja del sistema** (system tray) con:
   - Icono dinámico que muestra emoji del clima + temperatura actual
   - Minimizar al tray al cerrar la ventana (configurable)
@@ -36,27 +38,23 @@ Aplicación de escritorio GNOME para consultar el pronóstico meteorológico usa
 │        🌫️   8°  Ahora               │
 │                                      │
 │  ┌────────────────────────────────┐  │
-│  │ 🕐  Ver pronóstico 24h  →  →  │  │
+│  │ 🌫️  Hoy           11° / 2°    │  │
+│  │     20 de julio                 │  │
+│  │     Niebla                      │  │
+│  │ ──────────────────────────────  │  │
+│  │ 💧—  🌧️0%   💨8 km/h N     │  │
+│  │ ↗️18    🌅08:02  🌇17:55     │  │
+│  │ 🌧️0.0mm ☀️UV 1.6           │  │
 │  └────────────────────────────────┘  │
 │                                      │
-│  ┌────────────────────────────────┐  │
-│  │ 🌫️  Hoy          11°          │  │
-│  │     20 de julio    2°          │  │
-│  │     Niebla                     │  │
-│  │ ────────────────────────────── │  │
-│  │ 💧—  🌧️0%   💨8 km/h N   │  │
-│  │ ↗️18    🌅08:02  🌇17:55      │  │
-│  │ 🌧️0.0mm ☀️UV 1.6            │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │ 🌧️  Mañana       13°         │  │
-│  │     21 de julio    1°          │  │
-│  │     Lluvia ligera              │  │
-│  │ ────────────────────────────── │  │
-│  │ 💧—  🌧️90%  💨19 km/h E   │  │
-│  │ ⚠️ ↗️36  🌅08:03  🌇17:54    │  │
-│  │ ...                            │  │
-│  └────────────────────────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  │
+│  │ 🌧️ Mañana   │  │ ⛅ Miércoles │  │
+│  │   13° / 1°   │  │   10° / 4°   │  │
+│  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  │
+│  │ ☀️ Jueves   │  │ 🌤️ Viernes  │  │
+│  │   15° / 6°   │  │   16° / 7°   │  │
+│  └──────────────┘  └──────────────┘  │
 └──────────────────────────────────────┘
 ```
 
@@ -163,13 +161,22 @@ flatpak build-bundle repo meteowatch.flatpak com.meteowatch.app
 | `--background`, `-b` | Iniciar minimizado en la bandeja del sistema |
 | `--no-tray` | Desactivar completamente el icono de bandeja |
 
-## 🧪 Tests
+## � Reporte con IA (DeepSeek)
+
+Meteowatch puede generar un reporte meteorológico narrativo con la API de DeepSeek. Para habilitarlo:
+
+1. Abre el menú ☰ → **Preferencias**.
+2. Ingresa tu llave de API de DeepSeek y presiona **Guardar**.
+
+La llave se guarda en `~/.config/meteowatch/config.json` y tiene precedencia sobre la variable de entorno `DEEPSEEK_API_KEY`. Si no se configura ninguna llave, la sección de reporte permanece oculta.
+
+## �🧪 Tests
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-**54 tests unitarios** cubriendo configuración, modelos de datos, mapeo de símbolos meteorológicos, cliente HTTP y generación de iconos del tray.
+**221 tests unitarios** cubriendo configuración, modelos de datos, mapeo de símbolos meteorológicos, cliente HTTP, motor de reportes y generación de iconos del tray.
 
 ## 🌐 API de Open-Meteo
 

@@ -19,6 +19,7 @@ from meteowatch.alerts import Alert, send_alerts
 from meteowatch.config import AppConfig
 from meteowatch.services.forecast import ForecastService
 from meteowatch.window import MeteowatchWindow
+from meteowatch.widgets.settings import SettingsDialog
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,11 @@ class MeteowatchApp(Adw.Application):
         help_action.connect("activate", self._on_help_action)
         self.add_action(help_action)
 
+        # Acción "Preferencias"
+        prefs_action = Gio.SimpleAction.new("preferences", None)
+        prefs_action.connect("activate", self._on_preferences_action)
+        self.add_action(prefs_action)
+
     def _on_quit_action(self, action, param) -> None:
         """Acción 'quit': fuerza el cierre real de la aplicación.
 
@@ -348,6 +354,20 @@ class MeteowatchApp(Adw.Application):
         dialog.set_child(toolbar)
         dialog.present(self._window)
 
+    def _on_preferences_action(self, action, param) -> None:
+        """Acción 'preferences': abre el diálogo de preferencias."""
+        logger.info("Mostrando diálogo de preferencias")
+        dialog = SettingsDialog(
+            config=self._config,
+            on_saved=self._on_settings_saved,
+        )
+        dialog.present(self._window)
+
+    def _on_settings_saved(self) -> None:
+        """Aplica los cambios de configuración a la ventana principal."""
+        if self._window is not None:
+            self._window.apply_settings()
+
     def _load_css(self) -> None:
         """Carga estilos CSS personalizados para la aplicación."""
         css_provider = Gtk.CssProvider()
@@ -362,6 +382,19 @@ class MeteowatchApp(Adw.Application):
                 background-color: @card_bg_color;
                 border-radius: 12px;
                 padding: 16px;
+            }
+            .card-button {
+                padding: 0;
+                min-height: 0;
+                min-width: 0;
+                background-image: none;
+                background-color: transparent;
+                border: none;
+                box-shadow: none;
+            }
+            .today-card {
+                border: 2px solid @accent_color;
+                background-color: alpha(@accent_bg_color, 0.15);
             }
             .day-separator {
                 background-color: alpha(@accent_bg_color, 0.12);

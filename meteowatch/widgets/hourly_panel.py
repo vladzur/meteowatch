@@ -43,6 +43,23 @@ def _degrees_to_cardinal(degrees: int) -> str:
     return directions[index]
 
 
+def _day_start_of(end_ms: int, tz: ZoneInfo) -> int:
+    """Devuelve el timestamp de medianoche local del día de un timestamp (ms).
+
+    Args:
+        end_ms: Timestamp en milisegundos.
+        tz: Zona horaria local para el cálculo.
+
+    Returns:
+        Timestamp de medianoche local del día, en milisegundos.
+    """
+    dt = datetime.fromtimestamp(end_ms / 1000, tz=tz)
+    return int(datetime(
+        dt.year, dt.month, dt.day, 0, 0, 0,
+        tzinfo=tz,
+    ).timestamp() * 1000)
+
+
 def _alert_icon(alerts: list[Alert]) -> Optional[str]:
     """Devuelve el emoji de alerta según el nivel más grave, o None.
 
@@ -80,17 +97,18 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
     """
 
     def __init__(self, config: AppConfig, forecast_service: ForecastService,
-                 location_hash: str, on_change_location=None):
+                 location_hash: str, day_start: Optional[int] = None,
+                 on_change_location=None):
         """Inicializa la página de detalle por hora.
 
         Args:
             config: Configuración de la aplicación.
             forecast_service: Servicio centralizado de datos meteorológicos.
             location_hash: No usado (mantenido por compatibilidad).
+            day_start: Timestamp de inicio del día a mostrar (opcional).
             on_change_location: Callback opcional para cambiar de ubicación.
         """
         super().__init__()
-        self.set_title("Pronóstico por hora")
 
         # Obtener la zona horaria desde la configuración
         try:
@@ -102,6 +120,13 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
         self._forecast_service = forecast_service
         self._timezone = tz
         self._on_change_location = on_change_location
+        self._day_start = day_start
+
+        # Título según el día seleccionado (o genérico)
+        if day_start is not None:
+            self.set_title(self._day_title(day_start))
+        else:
+            self.set_title("Pronóstico por hora")
 
         # Datos del forecast
         self._forecast: Optional[HourlyForecast] = None
@@ -193,6 +218,32 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             self._config.timezone,
         )
 
+    def _day_title(self, day_start: int) -> str:
+        """Devuelve el título de la página para un día específico.
+
+        Args:
+            day_start: Timestamp de medianoche local del día (ms).
+
+        Returns:
+            Título legible: "Hoy", "Mañana" o día de la semana + fecha.
+        """
+        dt = datetime.fromtimestamp(day_start / 1000, tz=self._timezone)
+        now = datetime.now(tz=self._timezone)
+        today_start = int(datetime(
+            now.year, now.month, now.day, 0, 0, 0,
+            tzinfo=self._timezone,
+        ).timestamp() * 1000)
+
+        delta_days = (day_start - today_start) // 86400000
+        if delta_days == 0:
+            day_name = "Hoy"
+        elif delta_days == 1:
+            day_name = "Mañana"
+        else:
+            day_name = WEEKDAYS[dt.weekday()]
+
+        return f"{day_name} · {dt.strftime('%d de %B').lower()}"
+
     # ------------------------------------------------------------------
     # ForecastObserver implementation
     # ------------------------------------------------------------------
@@ -282,6 +333,28 @@ class HourlyForecastPage(Adw.NavigationPage, BaseForecastObserver):
             no_data.set_halign(Gtk.Align.CENTER)
             no_data.set_margin_top(40)
             self._main_box.append(no_data)
+            return
+
+        # Modo "vista de día": mostrar solo las horas del día seleccionado
+        if self._day_start is not None:
+            day_hours = [
+                h for h in forecast.hours
+                if _day_start_of(h.end, self._timezone) == self._day_start
+            ]
+            self._all_hours = []
+            self._future_hours = day_hours
+
+            if not day_hours:
+                logger.warning("No hay horas para el día %s", self._day_start)
+                no_data = Gtk.Label()
+                no_data.set_text("No hay datos de pronóstico para este día.")
+                no_data.set_halign(Gtk.Align.CENTER)
+                no_data.set_margin_top(40)
+                self._main_box.append(no_data)
+                return
+
+            self._hours_list = self._build_hours_list_widget(day_hours)
+            self._main_box.append(self._hours_list)
             return
 
         # Calcular timestamp actual en ms

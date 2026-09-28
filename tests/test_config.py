@@ -120,6 +120,47 @@ class TestAppConfig:
                 assert cfg.longitude == -0.1278
                 assert cfg.location_name == "London"
 
+    def test_deepseek_api_key_defaults_empty(self):
+        """deepseek_api_key debe ser vacía por defecto."""
+        cfg = config_module.AppConfig()
+        assert cfg.deepseek_api_key == ""
+
+    def test_load_deepseek_api_key(self):
+        """Debe cargar deepseek_api_key desde el JSON."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, "config.json")
+            data = {
+                "latitude": 40.4168,
+                "longitude": -3.7038,
+                "deepseek_api_key": "sk-abc123",
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+
+            with patch.object(config_module, "CONFIG_FILE", config_path):
+                cfg = config_module.AppConfig.load()
+                assert cfg.deepseek_api_key == "sk-abc123"
+
+    def test_save_deepseek_api_key(self):
+        """Debe persistir deepseek_api_key al guardar."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, ".config", "meteowatch")
+            config_path = os.path.join(config_dir, "config.json")
+
+            with patch.object(config_module, "CONFIG_DIR", config_dir):
+                with patch.object(config_module, "CONFIG_FILE", config_path):
+                    cfg = config_module.AppConfig(
+                        latitude=40.4168,
+                        longitude=-3.7038,
+                        deepseek_api_key="sk-xyz",
+                    )
+                    cfg.save()
+
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        saved = json.load(f)
+
+                    assert saved["deepseek_api_key"] == "sk-xyz"
+
     def test_close_to_tray_default_is_true(self):
         """close_to_tray debe ser True por defecto."""
         cfg = config_module.AppConfig()
