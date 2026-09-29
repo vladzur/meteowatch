@@ -2,14 +2,16 @@
 
 Construye un prompt estructurado a partir de los datos del ForecastService
 (daily + hourly + current), llama a la API de DeepSeek y retorna un informe
-narrativo en español neutro, con tono amigable y sin jerga técnica.
+narrativo en español neutro, profesional y dirigido directamente al usuario.
 """
 
 import json
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -30,31 +32,53 @@ REQUEST_TIMEOUT = 30  # segundos para timeout HTTP
 
 # Prompt del sistema: instrucciones para DeepSeek
 SYSTEM_PROMPT = (
-    "Eres un meteorólogo profesional que presenta el informe del tiempo "
-    "en televisión. Tu tarea es analizar los datos del pronóstico "
-    "meteorológico proporcionados y generar un informe escrito claro, "
-    "amigable y útil para el público general.\n\n"
+    "Eres un meteorólogo profesional que redacta informes del tiempo "
+    "precisos y útiles. Tu tarea es analizar los datos del pronóstico "
+    "meteorológico proporcionados y elaborar un informe claro, "
+    "informativo y dirigido directamente al usuario.\n\n"
     "Reglas obligatorias:\n"
+    "- Dirígete SIEMPRE al usuario en segunda persona (\"tú\"), con un "
+    "registro formal y respetuoso.\n"
     "- Escribe SIEMPRE en español neutro (sin regionalismos de ningún país).\n"
-    "- NO uses jerga técnica ni términos científicos complejos.\n"
+    "- Sé preciso y conciso; usa un lenguaje claro y profesional, e "
+    "incluye magnitudes concretas (temperaturas, viento, precipitación, "
+    "humedad, índice UV).\n"
     "- NO inventes datos ni condiciones meteorológicas que no aparezcan "
     "explícitamente en los datos proporcionados.\n"
     "- Si no hay datos suficientes para una afirmación, no la hagas.\n"
-    "- Usa un tono cálido y cercano, como si hablaras con un amigo.\n\n"
+    "- Mantén un tono serio y profesional en todo momento.\n\n"
     "Estructura del informe:\n"
-    "1. Un párrafo de resumen general (2-3 frases) con la idea principal "
-    "del pronóstico.\n"
-    "2. Un desglose día por día con lo más relevante: temperaturas, "
-    "condiciones del cielo, precipitaciones, viento.\n"
-    "3. Recomendaciones prácticas breves (¿llevar paraguas? ¿abrigo? "
-    "¿protegerse del sol?).\n\n"
-    "Extensión máxima: 250 palabras."
+    "1. Un párrafo introductorio que resuma la situación general y lo "
+    "más relevante para el usuario.\n"
+    "2. Un análisis día por día con detalles concretos: temperaturas "
+    "máximas y mínimas, condiciones del cielo, precipitación y su "
+    "probabilidad, viento y ráfagas, salida y puesta del sol, horas de "
+    "sol e índice UV cuando corresponda.\n"
+    "3. Recomendaciones prácticas y específicas para cada jornada "
+    "(abrigo, paraguas, protección solar, precaución con el viento).\n\n"
+    "Extensión máxima: 350 palabras."
 )
 
 
 # ------------------------------------------------------------------
 # ReportEngine
 # ------------------------------------------------------------------
+
+
+def _degrees_to_cardinal(degrees: int) -> str:
+    """Convierte una dirección en grados (0-360) a punto cardinal.
+
+    Args:
+        degrees: Ángulo en grados (0=N, 90=E, 180=S, 270=W).
+
+    Returns:
+        Abreviatura del punto cardinal (N, NE, E, SE, S, SW, W, NW).
+    """
+    if degrees < 0:
+        return "?"
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    return directions[round(degrees / 45) % 8]
+
 
 class ReportEngine:
     """Motor de generación de reportes meteorológicos narrativos.
@@ -69,13 +93,17 @@ class ReportEngine:
         _last_generation_at: Timestamp de la última generación (para enfriamiento).
     """
 
-    def __init__(self):
+    def __init__(self, api_key: str = ""):
         """Inicializa el motor de reportes.
 
-        Lee la API key de la variable de entorno DEEPSEEK_API_KEY.
-        Si no está configurada, is_available() retorna False.
+        La API key se obtiene del argumento o, si está vacío, de la
+        variable de entorno DEEPSEEK_API_KEY. Si no hay llave configurada,
+        is_available() retorna False.
+
+        Args:
+            api_key: Llave de API de DeepSeek desde la configuración.
         """
-        self._api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        self._api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
         self._cached_report: Optional[str] = None
         self._cached_forecast_at: float = 0.0
         self._last_generation_at: float = 0.0
@@ -84,18 +112,26 @@ class ReportEngine:
     # Disponibilidad
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def is_available() -> bool:
+    def is_available(self) -> bool:
         """Verifica si el motor de reportes está disponible.
 
-        Retorna True si la variable de entorno DEEPSEEK_API_KEY está
-        configurada con un valor no vacío.
+        Retorna True si hay una API key configurada (desde la configuración
+        o la variable de entorno) con un valor no vacío.
 
         Returns:
             True si hay una API key configurada y el motor puede operar.
         """
-        key = os.environ.get("DEEPSEEK_API_KEY", "")
-        return bool(key.strip())
+        return bool(self._api_key)
+
+    def set_api_key(self, api_key: str) -> None:
+        """Actualiza la API key y limpia el cache del reporte.
+
+        Args:
+            api_key: Nueva llave de API de DeepSeek.
+        """
+        self._api_key = (api_key or os.environ.get("DEEPSEEK_API_KEY", "")).strip()
+        self.invalidate_cache()
+        logger.debug("API key de DeepSeek actualizada")
 
     # ------------------------------------------------------------------
     # Construcción del prompt
@@ -144,6 +180,12 @@ class ReportEngine:
         # --- Pronóstico diario ---
         parts.append("=== PRONÓSTICO DIARIO ===")
         if daily and daily.days:
+            # Zona horaria para formatear salida/puesta del sol
+            try:
+                tz = ZoneInfo(daily.timezone)
+            except Exception:
+                tz = None
+
             for i, day in enumerate(daily.days):
                 symbol = get_weather_symbol(day.symbol)
                 parts.append(f"Día {i + 1}:")
@@ -152,12 +194,25 @@ class ReportEngine:
                 parts.append(f"  Condición: {symbol.description}")
                 parts.append(f"  Precipitación: {day.precipitation:.1f} mm "
                              f"(probabilidad: {day.rain_probability}%)")
-                parts.append(f"  Viento: {day.wind_speed} km/h "
-                             f"(ráfagas: {day.wind_gust} km/h)")
+                parts.append(
+                    f"  Viento: {day.wind_speed} km/h "
+                    f"({_degrees_to_cardinal(day.wind_direction)}) "
+                    f"con ráfagas de {day.wind_gust} km/h"
+                )
                 parts.append(f"  Índice UV máximo: {day.uv_index_max:.1f}")
                 if day.sunshine_duration > 0:
                     hours_sun = day.sunshine_duration / 3600.0
                     parts.append(f"  Horas de sol: {hours_sun:.1f}h")
+                if tz is not None and day.sun_in > 0 and day.sun_out > 0:
+                    sun_in = datetime.fromtimestamp(
+                        day.sun_in / 1000, tz=tz
+                    ).strftime("%H:%M")
+                    sun_out = datetime.fromtimestamp(
+                        day.sun_out / 1000, tz=tz
+                    ).strftime("%H:%M")
+                    parts.append(
+                        f"  Salida del sol: {sun_in} · Puesta del sol: {sun_out}"
+                    )
                 parts.append("")
         else:
             parts.append("(No hay datos de pronóstico diario disponibles)")
@@ -215,7 +270,7 @@ class ReportEngine:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.7,
-            "max_tokens": 600,
+            "max_tokens": 900,
             "stream": False,
         }
 

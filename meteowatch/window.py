@@ -54,21 +54,23 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
         # Motor de alertas climáticas (persiste estado de deduplicación)
         self._alert_engine = AlertEngine()
 
-        # Motor de reportes con IA (opcional, depende de DEEPSEEK_API_KEY)
-        self._report_engine: ReportEngine | None = None
-        if ReportEngine.is_available():
-            self._report_engine = ReportEngine()
+        # Motor de reportes con IA (disponibilidad según la llave configurada)
+        self._report_engine = ReportEngine(api_key=config.deepseek_api_key)
+        if self._report_engine.is_available():
             logger.info("ReportEngine inicializado (DeepSeek disponible)")
         else:
-            logger.info("ReportEngine no disponible (DEEPSEEK_API_KEY no configurada)")
+            logger.info("ReportEngine no disponible (llave de DeepSeek no configurada)")
+
+        # Referencia a la página diaria actual (para aplicar ajustes en runtime)
+        self._daily_page: DailyForecastPage | None = None
 
         # Temporizadores de actualización periódica
         self._current_timer_id: int = 0   # cada 15 min
         self._forecast_timer_id: int = 0  # cada 1 hora
 
         self.set_title("Meteowatch")
-        self.set_default_size(420, 680)
-        self.set_size_request(360, 500)
+        self.set_default_size(660, 700)
+        self.set_size_request(500, 520)
 
         # Navegación principal
         self._navigation = Adw.NavigationView()
@@ -142,6 +144,7 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
             on_change_location=self._on_change_location,
             report_engine=self._report_engine,
         )
+        self._daily_page = page
         self._navigation.push(page)
         page.load_forecast()
 
@@ -157,6 +160,7 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
             config=self._config,
             forecast_service=self._forecast_service,
             location_hash=location_hash,
+            day_start=day_start,
             on_change_location=self._on_change_location,
         )
         self._navigation.push(page)
@@ -190,6 +194,21 @@ class MeteowatchWindow(Adw.ApplicationWindow, BaseForecastObserver):
         self._config.location_name = ""
         self._config.save()
         self._show_location_search()
+
+    def apply_settings(self) -> None:
+        """Aplica los cambios de configuración (p. ej. la llave de DeepSeek).
+
+        Recrea el motor de reportes con la llave actualizada y notifica
+        a la página diaria para que muestre u oculte la tarjeta de IA.
+        """
+        self._report_engine = ReportEngine(api_key=self._config.deepseek_api_key)
+        if self._report_engine.is_available():
+            logger.info("ReportEngine actualizado (DeepSeek disponible)")
+        else:
+            logger.info("ReportEngine actualizado (sin llave de DeepSeek)")
+
+        if self._daily_page is not None:
+            self._daily_page.set_report_engine(self._report_engine)
 
     def _on_close_request(self, window) -> bool:
         """Decide si cerrar la ventana o minimizar a la bandeja."""

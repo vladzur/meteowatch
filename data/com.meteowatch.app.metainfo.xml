@@ -57,6 +57,17 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.0" date="2026-09-28">
+      <description>
+        <p>Rediseño de la interfaz y reporte con IA mejorado.</p>
+        <ul>
+          <li>Nueva vista diaria en grilla de dos columnas con el día de hoy destacado</li>
+          <li>Tarjetas de día clicables que abren el pronóstico por hora de ese día</li>
+          <li>Configuración de la llave de DeepSeek desde el menú de preferencias (persistida en la configuración)</li>
+          <li>Reporte meteorológico con IA en tono profesional y posibilidad de releerlo sin regenerarlo</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.0" date="2026-09-06">
       <description>
         <p>Alertas climáticas unificadas en el pronóstico por hora.</p>

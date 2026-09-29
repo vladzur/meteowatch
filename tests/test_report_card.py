@@ -64,6 +64,8 @@ class TestWeatherReportCardStructure:
             "_enable_generate_button",
             "_on_expander_toggled",
             "_build_ui",
+            "_on_view_clicked",
+            "_open_report_dialog",
         ]
 
         # Verificar que la clase define estos métodos

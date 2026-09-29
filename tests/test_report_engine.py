@@ -115,24 +115,52 @@ class TestIsAvailable:
     """Tests para ReportEngine.is_available()."""
 
     def test_returns_false_when_key_not_set(self, monkeypatch):
-        """Debe retornar False si DEEPSEEK_API_KEY no está configurada."""
+        """Debe retornar False si no hay llave ni variable de entorno."""
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        assert ReportEngine.is_available() is False
+        assert ReportEngine().is_available() is False
 
     def test_returns_false_when_key_empty(self, monkeypatch):
-        """Debe retornar False si DEEPSEEK_API_KEY está vacía."""
+        """Debe retornar False si la variable de entorno está vacía."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "")
-        assert ReportEngine.is_available() is False
+        assert ReportEngine().is_available() is False
 
     def test_returns_false_when_key_whitespace(self, monkeypatch):
-        """Debe retornar False si DEEPSEEK_API_KEY es solo espacios."""
+        """Debe retornar False si la variable de entorno es solo espacios."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "   ")
-        assert ReportEngine.is_available() is False
+        assert ReportEngine().is_available() is False
 
     def test_returns_true_when_key_set(self, monkeypatch):
         """Debe retornar True si DEEPSEEK_API_KEY tiene un valor."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-123")
-        assert ReportEngine.is_available() is True
+        assert ReportEngine().is_available() is True
+
+    def test_returns_true_when_api_key_passed_by_constructor(self, monkeypatch):
+        """Debe retornar True si se pasa la llave por constructor."""
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        assert ReportEngine(api_key="sk-config").is_available() is True
+
+    def test_config_key_takes_precedence_over_env(self, monkeypatch):
+        """La llave de configuración debe tener precedencia sobre la env var."""
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-env")
+        engine = ReportEngine(api_key="sk-config")
+        assert engine.is_available() is True
+        assert engine._api_key == "sk-config"
+
+    def test_env_fallback_when_config_key_empty(self, monkeypatch):
+        """Debe usar la env var si la llave de configuración está vacía."""
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-env")
+        engine = ReportEngine(api_key="")
+        assert engine.is_available() is True
+        assert engine._api_key == "sk-env"
+
+    def test_set_api_key_updates_key(self, monkeypatch):
+        """set_api_key debe actualizar la llave e invalidar el cache."""
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        engine = ReportEngine()
+        assert engine.is_available() is False
+        engine.set_api_key("sk-new")
+        assert engine.is_available() is True
+        assert engine._api_key == "sk-new"
 
 
 # ------------------------------------------------------------------
@@ -223,6 +251,35 @@ class TestBuildPrompt:
 
         # Debe mencionar que hay más horas
         assert "24 horas más" in prompt
+
+    def test_prompt_includes_sunrise_and_sunset(self):
+        """El prompt debe incluir salida y puesta del sol cuando hay zona horaria."""
+        current = _make_current()
+        daily = _make_daily(1)
+        hourly = _make_hourly(1)
+
+        prompt = ReportEngine.build_prompt(daily, hourly, current)
+
+        assert "Salida del sol" in prompt
+        assert "Puesta del sol" in prompt
+
+
+# ------------------------------------------------------------------
+# Tests: system_prompt
+# ------------------------------------------------------------------
+
+class TestSystemPrompt:
+    """Tests del prompt de sistema enviado a DeepSeek."""
+
+    def test_system_prompt_is_professional_and_direct(self):
+        """El prompt debe ser profesional y dirigirse al usuario en segunda persona."""
+        assert "tú" in SYSTEM_PROMPT
+        assert "profesional" in SYSTEM_PROMPT
+
+    def test_system_prompt_avoids_tv_style(self):
+        """El prompt no debe instruir un estilo de presentador de televisión."""
+        assert "televisión" not in SYSTEM_PROMPT
+        assert "amigo" not in SYSTEM_PROMPT
 
 
 # ------------------------------------------------------------------

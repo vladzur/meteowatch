@@ -222,7 +222,7 @@ class WeatherReportCard(Gtk.Box):
         spinner_label.add_css_class("dim-label")
         self._spinner_box.append(spinner_label)
 
-        # --- Botón de generación ---
+        # --- Botones de acción ---
         btn_box = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
             spacing=8,
@@ -230,6 +230,14 @@ class WeatherReportCard(Gtk.Box):
         btn_box.set_halign(Gtk.Align.CENTER)
         btn_box.set_margin_top(4)
         inner_box.append(btn_box)
+
+        self._view_btn = Gtk.Button(label="Ver reporte")
+        self._view_btn.set_tooltip_text(
+            "Vuelve a abrir el último reporte generado sin consumir tokens"
+        )
+        self._view_btn.set_sensitive(False)
+        self._view_btn.connect("clicked", self._on_view_clicked)
+        btn_box.append(self._view_btn)
 
         self._generate_btn = Gtk.Button(label="Generar reporte")
         self._generate_btn.set_tooltip_text(
@@ -293,6 +301,18 @@ class WeatherReportCard(Gtk.Box):
         """Maneja la expansión/colapso del widget."""
         # Si se colapsa, no hacemos nada especial
         pass
+
+    def _on_view_clicked(self, btn: Gtk.Button) -> None:
+        """Abre el último reporte generado sin llamar a la API.
+
+        Args:
+            btn: Botón que disparó la acción.
+        """
+        if self._last_report is None:
+            return
+
+        logger.debug("Mostrando el reporte cacheado")
+        self._open_report_dialog(self._last_report)
 
     def _on_generate_clicked(self, btn: Gtk.Button) -> None:
         """Inicia la generación del reporte en un hilo separado.
@@ -372,7 +392,7 @@ class WeatherReportCard(Gtk.Box):
             )
 
     def _on_report_ready(self, report: str) -> bool:
-        """Abre el diálogo con el reporte generado.
+        """Muestra el reporte generado en la tarjeta y abre el diálogo.
 
         Args:
             report: Texto del reporte generado.
@@ -382,20 +402,23 @@ class WeatherReportCard(Gtk.Box):
         """
         self._set_loading_state(False)
 
-        # Mostrar indicador de reporte disponible
-        self._status_label.set_label(
-            "✅ Reporte generado — presiona de nuevo para regenerar"
-        )
-        self._status_label.set_visible(True)
+        # Mostrar el reporte de forma persistente en la tarjeta
+        self._report_label.set_label(report)
+        self._scrolled.set_visible(True)
         self._placeholder_label.set_visible(False)
 
-        # Abrir diálogo con el reporte
-        parent = self.get_root()
-        if isinstance(parent, Gtk.Window):
-            dialog = WeatherReportDialog(parent, report)
-        else:
-            dialog = WeatherReportDialog(None, report)
-        dialog.present()
+        # Actualizar botones: ahora hay un reporte disponible para releer
+        self._view_btn.set_sensitive(True)
+        self._generate_btn.set_label("Regenerar reporte")
+
+        self._status_label.set_label(
+            "✅ Reporte generado. Usa \"Ver reporte\" para releerlo "
+            "o \"Regenerar reporte\" para uno nuevo."
+        )
+        self._status_label.set_visible(True)
+
+        # Abrir el diálogo con el reporte generado
+        self._open_report_dialog(report)
 
         # Programar re-habilitación del botón tras cooldown
         GLib.timeout_add_seconds(
@@ -404,6 +427,19 @@ class WeatherReportCard(Gtk.Box):
         )
 
         return False  # No reintentar
+
+    def _open_report_dialog(self, report: str) -> None:
+        """Abre el diálogo modal con el reporte dado.
+
+        Args:
+            report: Texto del reporte a mostrar.
+        """
+        parent = self.get_root()
+        if isinstance(parent, Gtk.Window):
+            dialog = WeatherReportDialog(parent, report)
+        else:
+            dialog = WeatherReportDialog(None, report)
+        dialog.present()
 
     def _enable_generate_button(self) -> bool:
         """Re-habilita el botón de generación tras el período de enfriamiento.

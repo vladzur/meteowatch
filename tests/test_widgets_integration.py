@@ -107,10 +107,15 @@ class TestDailyForecastPageMethods:
         """Debe tener el método load_forecast."""
         assert hasattr(DailyForecastPage, "load_forecast")
 
-    def test_has_on_24h_clicked(self):
-        """Debe tener el método _on_24h_clicked (regresión detectada)."""
-        assert hasattr(DailyForecastPage, "_on_24h_clicked")
-        assert callable(getattr(DailyForecastPage, "_on_24h_clicked"))
+    def test_has_on_day_clicked(self):
+        """Debe tener el método _on_day_clicked (tarjetas clicables)."""
+        assert hasattr(DailyForecastPage, "_on_day_clicked")
+        assert callable(getattr(DailyForecastPage, "_on_day_clicked"))
+
+    def test_has_set_report_engine(self):
+        """Debe tener el método set_report_engine para aplicar ajustes."""
+        assert hasattr(DailyForecastPage, "set_report_engine")
+        assert callable(getattr(DailyForecastPage, "set_report_engine"))
 
     def test_has_freshness_methods(self):
         """Debe tener los métodos del indicador de frescura."""
@@ -328,6 +333,8 @@ class TestWeatherReportCardIntegration:
             "_do_generate",
             "_on_report_ready",
             "_enable_generate_button",
+            "_on_view_clicked",
+            "_open_report_dialog",
         ]
         for method in required:
             assert hasattr(WeatherReportCard, method), \
@@ -345,10 +352,10 @@ class TestWeatherReportCardIntegration:
         from meteowatch.report.engine import ReportEngine
 
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        assert ReportEngine.is_available() is False
+        assert ReportEngine().is_available() is False
 
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        assert ReportEngine.is_available() is True
+        assert ReportEngine().is_available() is True
 
 
 class TestDailyForecastReportIntegration:

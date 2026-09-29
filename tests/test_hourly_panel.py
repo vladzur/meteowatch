@@ -12,6 +12,7 @@ from meteowatch.widgets.hourly_panel import (
     WEEKDAYS,
     _alert_icon,
     _alert_tooltip,
+    _day_start_of,
     _degrees_to_cardinal,
     HourlyForecastPage,
 )
@@ -118,6 +119,33 @@ class TestGroupHoursByDay:
         local_midnight = int(datetime(2026, 7, 25, 0, 0, 0, tzinfo=tz).timestamp() * 1000)
         assert local_midnight in grouped
         assert len(grouped[local_midnight]) == 2
+
+
+class TestDayStartOf:
+    """Pruebas para el helper _day_start_of (medianoche local)."""
+
+    def test_utc_midnight(self):
+        """Debe truncar a medianoche UTC cuando el tz es UTC."""
+        tz = timezone.utc
+        ts = int(datetime(2026, 7, 24, 15, 30, tzinfo=timezone.utc).timestamp() * 1000)
+        expected = int(datetime(2026, 7, 24, 0, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+        assert _day_start_of(ts, tz) == expected
+
+    def test_local_midnight_not_utc(self):
+        """Debe respetar la medianoche local, no UTC."""
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Argentina/Buenos_Aires")  # UTC-3
+        # 02:00 ART = 05:00 UTC del 25 de julio
+        ts = int(datetime(2026, 7, 25, 5, 0, tzinfo=timezone.utc).timestamp() * 1000)
+        local_midnight = int(datetime(2026, 7, 25, 0, 0, 0, tzinfo=tz).timestamp() * 1000)
+        assert _day_start_of(ts, tz) == local_midnight
+
+    def test_same_day_same_result(self):
+        """Dos horas del mismo día deben devolver la misma medianoche."""
+        tz = timezone.utc
+        h1 = int(datetime(2026, 7, 24, 1, 0, tzinfo=timezone.utc).timestamp() * 1000)
+        h2 = int(datetime(2026, 7, 24, 23, 59, tzinfo=timezone.utc).timestamp() * 1000)
+        assert _day_start_of(h1, tz) == _day_start_of(h2, tz)
 
 
 class TestFilterFutureHours:
