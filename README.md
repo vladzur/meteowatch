@@ -161,6 +161,20 @@ flatpak build-bundle repo meteowatch.flatpak com.meteowatch.app
 | `--background`, `-b` | Iniciar minimizado en la bandeja del sistema |
 | `--no-tray` | Desactivar completamente el icono de bandeja |
 
+### Solución de problemas
+
+**La app se cierra al abrir con un error `The program 'meteowatch' received an X Window System error` (`BadDrawable`, `request_code 149`)**
+
+Es un fallo del renderizador GL de GTK cuando no logra inicializar OpenGL/EGL sobre X11 (por ejemplo, con drivers NVIDIA propietarios o dentro del sandbox sin acceso a `/dev/dri`). Meteowatch ya cae automáticamente al renderizador Cairo cuando no detecta dispositivos DRM, pero puedes forzarlo manualmente:
+
+```bash
+flatpak run --env=GSK_RENDERER=cairo com.meteowatch.app
+# o, si el problema solo aparece en X11, usar Wayland:
+flatpak run --env=GDK_BACKEND=wayland com.meteowatch.app
+```
+
+Si estás usando una compilación propia del Flatpak, verifica que el manifiesto incluya `--device=dri` y reconstruye con `flatpak-builder --force-clean --user --install build-dir com.meteowatch.app.json`.
+
 ## � Reporte con IA (DeepSeek)
 
 Meteowatch puede generar un reporte meteorológico narrativo con la API de DeepSeek. Para habilitarlo:
@@ -228,7 +242,7 @@ main.py → app.py (Adw.Application + flags CLI)
 | App ID | `com.meteowatch.app` |
 | Runtime | `org.gnome.Platform//49` |
 | SDK | `org.gnome.Sdk//49` |
-| Permisos | Wayland, X11 fallback, red, IPC, bus de sesión D-Bus |
+| Permisos | Wayland, X11 fallback, red, IPC, bus de sesión D-Bus, dispositivo DRI (`--device=dri`) |
 
 Las dependencias Python (`requests`, `urllib3`, `certifi`, `charset-normalizer`, `idna`, `setuptools`) se incluyen como wheels offline en `flatpak-deps/` para evitar acceso a red durante el build.
 
