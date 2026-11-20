@@ -57,6 +57,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.1" date="2026-11-19">
+      <description>
+        <p>Corrección del arranque en X11.</p>
+        <ul>
+          <li>Se agrega el permiso <code>--device=dri</code> al Flatpak para que GTK pueda inicializar EGL/OpenGL dentro del sandbox</li>
+          <li>La aplicación cae automáticamente al renderizador Cairo si no detecta dispositivos DRM en X11, evitando el error fatal <code>BadDrawable</code> al iniciar</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-09-28">
       <description>
         <p>Rediseño de la interfaz y reporte con IA mejorado.</p>
